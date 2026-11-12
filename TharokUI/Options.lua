@@ -750,7 +750,9 @@ function T:UpdateMinimapButton()
 	if not Minimap then
 		return
 	end
-	if T.db.minimap.hide then
+	-- `T.minimapButtonElsewhere` : un module (le tiroir) offre deja l'acces au
+	-- menu, la pastille ne ferait que masquer la carte.
+	if T.db.minimap.hide or T.minimapButtonElsewhere then
 		if minimapButton then
 			minimapButton:Hide()
 		end

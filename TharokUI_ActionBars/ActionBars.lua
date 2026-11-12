@@ -26,8 +26,35 @@ local Module = T:RegisterModule("ActionBars", {
 		hideMacroNames = true, -- nom des macros sur les boutons
 		panels = true, -- panneau de fond translucide derriere chaque barre
 		cooldownNumbers = true, -- secondes de recharge sur les icones
+		hideEmpty = true, -- emplacements vides invisibles (sauf en glissant un sort)
 	},
 })
+
+-------------------------------------------------------------------------------
+-- Emplacements vides
+-------------------------------------------------------------------------------
+
+-- Un emplacement vide affiche quand meme son raccourci (a-1, m-2...) : du
+-- texte sans information. On le rend invisible (l'opacite n'est pas
+-- protegee, on peut la changer en combat), et on le remontre pendant qu'un
+-- sort ou un objet est tenu au curseur, pour pouvoir le deposer.
+local allButtons = {}
+local showGrid = false
+
+local function UpdateEmpty(button)
+	if not Module.db.hideEmpty then
+		return
+	end
+	local action = button.action
+	local has = showGrid or (type(action) == "number" and HasAction(action))
+	button:SetAlpha(has and 1 or 0)
+end
+
+local function UpdateAllEmpty()
+	for button in pairs(allButtons) do
+		UpdateEmpty(button)
+	end
+end
 
 -- Etat de skin garde hors des boutons pour ne rien ecrire sur les frames
 -- securisees de Blizzard.
@@ -117,6 +144,12 @@ local function SkinBar(bar)
 	end
 	for _, button in pairs(bar.actionButtons) do
 		SkinButton(button)
+		if not allButtons[button] and button.action ~= nil then
+			allButtons[button] = true
+			if button.Update then
+				hooksecurefunc(button, "Update", UpdateEmpty)
+			end
+		end
 	end
 end
 
@@ -154,6 +187,7 @@ Module.options = {
 	{ type = "toggle", key = "hideMacroNames", label = "Masquer le nom des macros" },
 	{ type = "toggle", key = "panels", label = "Panneau de fond derrière chaque barre" },
 	{ type = "toggle", key = "cooldownNumbers", label = "Chiffres de recharge sur les icônes" },
+	{ type = "toggle", key = "hideEmpty", label = "Masquer les emplacements vides" },
 	{ type = "note", text = "Position et taille des barres : mode Édition du jeu." },
 }
 
@@ -163,6 +197,26 @@ function Module:OnEnable()
 	end
 	if self.db.hideBarArt then
 		HideMainBarArt()
+	end
+
+	if self.db.hideEmpty then
+		T:On("ACTIONBAR_SHOWGRID", function()
+			showGrid = true
+			UpdateAllEmpty()
+		end)
+		T:On("ACTIONBAR_HIDEGRID", function()
+			showGrid = false
+			UpdateAllEmpty()
+		end)
+		for _, event in ipairs({
+			"PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
+			"UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM",
+		}) do
+			T:On(event, function()
+				C_Timer.After(0, UpdateAllEmpty) -- apres la mise a jour Blizzard
+			end)
+		end
+		UpdateAllEmpty()
 	end
 
 	-- Compte a rebours sur les icones : c'est une option du jeu (barres

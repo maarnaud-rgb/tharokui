@@ -128,9 +128,26 @@ local function CreateRow(index)
 	return bar
 end
 
+-- Un autre module (le tiroir) peut imposer la largeur et la hauteur
+-- disponibles : T:SetMeterBox(width, height), ou nil pour revenir aux
+-- reglages du compteur.
+local box
+
+local function Width()
+	return box and box.width or Module.db.width
+end
+
+local function MaxRows()
+	if box then
+		local gap = frame and T:Pixel(1, frame) or 1
+		return math.max(1, math.floor((box.height - HEADER_HEIGHT) / (ROW_HEIGHT + gap)))
+	end
+	return Module.db.rows
+end
+
 local function Resize(shown)
 	local gap = T:Pixel(1, frame)
-	frame:SetSize(Module.db.width, HEADER_HEIGHT + shown * (ROW_HEIGHT + gap))
+	frame:SetSize(Width(), HEADER_HEIGHT + shown * (ROW_HEIGHT + gap))
 end
 
 local function Clear()
@@ -159,7 +176,7 @@ local function Refresh(clearIfEmpty)
 		maxValue = 1
 	end
 
-	local shown = math.min(#sources, Module.db.rows)
+	local shown = math.min(#sources, MaxRows())
 	for i = 1, shown do
 		local source = sources[i]
 		local row = rows[i] or CreateRow(i)
@@ -347,7 +364,7 @@ function Module:OnCommand(args)
 		end
 		self.db.width = math.floor(width)
 		Refresh(true)
-		frame:SetWidth(self.db.width)
+		frame:SetWidth(Width())
 		return true
 	elseif key == "locked" then
 		local value = T.ParseBool(args[2])
@@ -419,7 +436,7 @@ Module.options = {
 			Module.db.width = value
 			if frame then
 				Refresh(true)
-				frame:SetWidth(value)
+				frame:SetWidth(Width())
 			end
 		end,
 	},
@@ -434,6 +451,18 @@ Module.options = {
 		end,
 	},
 }
+
+function T:SetMeterBox(width, height)
+	if width and height then
+		box = { width = width, height = height }
+	else
+		box = nil
+	end
+	if frame then
+		Refresh(true)
+		frame:SetWidth(Width())
+	end
+end
 
 function Module:OnEnable()
 	if not C_DamageMeter or not C_DamageMeter.GetCombatSessionFromType or not Enum.DamageMeterType then

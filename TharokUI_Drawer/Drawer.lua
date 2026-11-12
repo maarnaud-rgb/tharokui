@@ -35,7 +35,7 @@ local Module = T:RegisterModule("Drawer", {
 	title = "Tiroir",
 	defaults = {
 		enabled = false, -- mode tiroir : inactif tant qu'on ne l'active pas
-		width = 20, -- largeur du tiroir de droite, en % de l'ecran
+		width = 17, -- largeur du tiroir de droite, en % de l'ecran
 		alpha = 0.75, -- opacite par defaut
 		version = 0, -- version des reglages (migrations)
 		combatAlpha = 0.6, -- opacite en combat
@@ -88,20 +88,44 @@ local function BaseAlpha()
 	return Module.db.alpha
 end
 
--- Fond du tiroir : noir leger hors combat (couleur du theme), rouge leger
--- en combat. Une texture n'est pas protegee : on peut la changer en combat.
-local COMBAT_BG = { 0.32, 0.03, 0.03 }
+-- En combat, le signal passe par le liseré (bordure et trait du haut en
+-- rouge) et une teinte tres legere du fond : le contenu reste lisible.
+-- Textures non protegees : on peut les changer en combat.
+local COMBAT_RED = { 0.9, 0.15, 0.12 }
+local COMBAT_TINT = 0.12 -- part de rouge melangee au fond
 
-local function PaintBackground(drawer)
-	local bg = drawer.bg
-	if not bg then
-		return
-	end
+local function BackgroundColor()
 	local r, g, b, a = unpack(T.colors.bg)
 	if inCombat then
-		r, g, b = unpack(COMBAT_BG)
+		local t = COMBAT_TINT
+		r = r + (COMBAT_RED[1] - r) * t
+		g = g + (COMBAT_RED[2] - g) * t
+		b = b + (COMBAT_RED[3] - b) * t
 	end
-	bg:SetColorTexture(r, g, b, a)
+	return r, g, b, a
+end
+
+local function PaintBackground(drawer)
+	if not drawer.bg then
+		return
+	end
+	local r, g, b, a = BackgroundColor()
+	drawer.bg:SetColorTexture(r, g, b, a)
+	if drawer.border then
+		if inCombat then
+			drawer.border:Paint(COMBAT_RED[1], COMBAT_RED[2], COMBAT_RED[3], 1)
+		else
+			drawer.border:Paint(unpack(T.colors.border))
+		end
+	end
+	if drawer.accent then
+		local ar, ag, ab = unpack(inCombat and COMBAT_RED or T.colors.accent)
+		drawer.accent:SetColorTexture(ar, ag, ab, 0.9)
+	end
+	-- Fondu en bas du suivi de quetes : meme couleur que le fond.
+	if drawer.questFade then
+		drawer.questFade:SetGradient("VERTICAL", CreateColor(r, g, b, math.min(1, a + 0.1)), CreateColor(r, g, b, 0))
+	end
 end
 
 local function ChatFrames()
@@ -630,6 +654,13 @@ local function Layout()
 			y = y + item.h * item.scale + BUTTON_GAP
 		end
 
+		if right.barsLine then
+			right.barsLine:ClearAllPoints()
+			right.barsLine:SetShown(barsHeight > 0)
+			right.barsLine:SetPoint("TOPLEFT", right.frame, "TOPLEFT", PAD, -(barsTop - GAP / 2))
+			right.barsLine:SetPoint("TOPRIGHT", right.frame, "TOPRIGHT", -PAD, -(barsTop - GAP / 2))
+		end
+
 		right.column = {
 			x = PAD,
 			width = contentWidth,
@@ -646,6 +677,7 @@ local function Layout()
 		screenHeight = UIParent:GetHeight()
 		bottom.width = screenWidth - (right and right.size or 0)
 		bottom.barsLeft = bottom.width
+		bottom.barsRight = nil
 		wipe(bottom.slots)
 		bottom.barsWidth = 0
 		local y = PAD
@@ -670,9 +702,20 @@ local function Layout()
 				y = y + height * scale + GAP
 				bottom.barsWidth = math.max(bottom.barsWidth, width * scale)
 				bottom.barsLeft = math.min(bottom.barsLeft, bottom.slots[bar].x)
+				bottom.barsRight = math.max(bottom.barsRight or 0, bottom.slots[bar].x + width * scale)
 			end
 		end
 		bottom.size = math.max(y + PAD - GAP, BOTTOM_MIN_HEIGHT)
+		bottom.barsRight = bottom.barsRight or bottom.barsLeft
+
+		-- Trois blocs de meme hauteur : chat | barres | compteur. Le compteur
+		-- prend la place libre a droite des barres (plafonnee), le chat une
+		-- largeur raisonnable a gauche.
+		local meterSpace = bottom.width - bottom.barsRight - 3 * PAD
+		bottom.meterWidth = math.max(160, math.min(420, meterSpace))
+		bottom.meterHeight = bottom.size - 2 * PAD
+		local chatSpace = bottom.barsLeft - 3 * PAD - 30
+		bottom.chatWidth = math.max(150, math.min(chatSpace, math.max(320, bottom.width * 0.25)))
 	end
 
 	for _, drawer in pairs(drawers) do
@@ -1125,9 +1168,9 @@ local function CreateDrawer(key)
 	frame:EnableMouse(true) -- les clics ne traversent pas le panneau
 	-- Fond gere ici (et non par le theme) pour pouvoir le teinter en combat.
 	drawer.bg = T:CreateBackground(frame, nil, T.colors.bg[4])
+	drawer.border = T:CreateBorder(frame)
+	drawer.accent = T:CreateAccentLine(frame, "TOP", 2)
 	PaintBackground(drawer)
-	T:CreateBorder(frame)
-	T:CreateAccentLine(frame, key == "right" and "TOP" or "TOP", 2)
 	drawer.frame = frame
 
 	-- Poignee : toujours a l'ecran, collee au bord interieur du tiroir.
@@ -1187,6 +1230,25 @@ local function BuildRight()
 		line:SetPoint("BOTTOMRIGHT", zones[name], "TOPRIGHT", 0, GAP / 2)
 		line:SetHeight(T:Pixel(1, zones[name]))
 	end
+	-- Meme filet entre la barre des sacs et les barres 5 et 6 (place par
+	-- Layout).
+	right.barsLine = right.frame:CreateTexture(nil, "BORDER")
+	right.barsLine:SetColorTexture(1, 1, 1, 0.08)
+	right.barsLine:SetHeight(T:Pixel(1, right.frame))
+
+	-- Fondu en bas du suivi de quetes : une ligne coupee a mi-hauteur se
+	-- fond dans le tiroir au lieu d'etre tranchee net. Cadre au-dessus du
+	-- suivi (strate et niveau ajustes a l'adoption).
+	local fader = CreateFrame("Frame", nil, right.frame)
+	fader:SetPoint("BOTTOMLEFT", zones.quests, "BOTTOMLEFT", 0, 0)
+	fader:SetPoint("BOTTOMRIGHT", zones.quests, "BOTTOMRIGHT", 0, 0)
+	fader:SetHeight(18)
+	fader:EnableMouse(false)
+	right.questFader = fader
+	right.questFade = fader:CreateTexture(nil, "OVERLAY")
+	right.questFade:SetAllPoints()
+	right.questFade:SetColorTexture(1, 1, 1, 1)
+	PaintBackground(right)
 
 	-- Jauges d'experience et de reputation : tout en haut, bord a bord.
 	xpGauge = CreateGauge(right.frame, "Expérience", XP_HEIGHT)
@@ -1237,6 +1299,12 @@ local function AdoptQuests()
 		return false
 	end
 	local isQuestie = frame ~= ObjectiveTrackerFrame
+	-- Le fondu doit passer au-dessus du suivi.
+	local fader = drawers.right and drawers.right.questFader
+	if fader then
+		fader:SetFrameStrata(frame:GetFrameStrata())
+		fader:SetFrameLevel(math.min(frame:GetFrameLevel() + 30, 9000))
+	end
 	Adopt(frame, function(tracker)
 		if isQuestie then
 			Fit(tracker, zones.quests, "TOPLEFT", true)
@@ -1286,6 +1354,33 @@ local function AdoptAll()
 			return
 		end
 		Adopt(bar, PlaceBar)
+		-- DIAGNOSTIC TEMPORAIRE : qui change l'echelle ou la taille de la
+		-- barre 1 (ou de ses boutons) en dehors du tiroir ? Affiche l'origine
+		-- de l'appel dans le chat, une fois par type d'appel.
+		if name == "MainActionBar" then
+			local reported = {}
+			local function Report(what, target)
+				return function(self, ...)
+					if placing then
+						return
+					end
+					local stack = debugstack(3, 4, 0) or "?"
+					local key = what .. stack
+					if reported[key] then
+						return
+					end
+					reported[key] = true
+					T:Print("|cffff8000[diag barre 1]|r", what, target, InCombatLockdown() and "(combat)" or "", ...)
+					print(stack)
+				end
+			end
+			hooksecurefunc(bar, "SetScale", Report("SetScale", "barre"))
+			hooksecurefunc(bar, "SetParent", Report("SetParent", "barre"))
+			for i, button in ipairs(bar.actionButtons or {}) do
+				hooksecurefunc(button, "SetScale", Report("SetScale", "bouton " .. i))
+				hooksecurefunc(button, "SetSize", Report("SetSize", "bouton " .. i))
+			end
+		end
 		-- Une barre qui apparait ou disparait change la hauteur du tiroir.
 		bar:HookScript("OnShow", QueueLayout)
 		bar:HookScript("OnHide", QueueLayout)
@@ -1420,18 +1515,32 @@ local function AdoptAll()
 		for _, name in ipairs(BOTTOM_BARS) do
 			AdoptBar(name)
 		end
+		-- Cadres de groupe : colles a gauche du cadre du joueur, alignes sur
+		-- son bas (ils s'empilent vers le haut). Le regard reste au centre.
+		if PartyFrame and PlayerFrame then
+			Adopt(PartyFrame, function(frame)
+				frame:ClearAllPoints()
+				frame:SetPoint("BOTTOMRIGHT", PlayerFrame, "BOTTOMLEFT", -3 * PAD, 0)
+			end)
+		end
+
 		-- Compteur DPS/HPS de Tharok UI, dans le coin droit du tiroir.
 		Adopt(TharokUIMeter, function(frame)
 			frame:SetParent(bottom.frame)
+			-- Compteur cale en haut a droite, sur la hauteur du tiroir : ses
+			-- lignes s'ajoutent vers le bas.
+			if T.SetMeterBox then
+				T:SetMeterBox(bottom.meterWidth, bottom.meterHeight)
+			end
 			frame:ClearAllPoints()
-			frame:SetPoint("BOTTOMRIGHT", bottom.frame, "BOTTOMRIGHT", -PAD, PAD)
+			frame:SetPoint("TOPRIGHT", bottom.frame, "TOPRIGHT", -PAD, -PAD)
 		end)
 		if Module.db.chat then
 			-- Fenetre de chat principale : calee dans la partie gauche du
 			-- tiroir, a gauche des barres. Elle reste hors du tiroir dans la
 			-- hierarchie (le jeu gere ses onglets), mais glisse avec lui.
 			Adopt(ChatFrame1, function(frame)
-				local width = math.max(bottom.barsLeft - 3 * PAD - 30, 150)
+				local width = bottom.chatWidth or math.max(bottom.barsLeft - 3 * PAD - 30, 150)
 				-- Le champ de saisie s'affiche sous la fenetre : on lui garde
 				-- sa place, sinon il sort de l'ecran par le bas.
 				local editBox = frame.editBox or ChatFrame1EditBox
@@ -1467,6 +1576,22 @@ local function Setup()
 			Module.db.alpha = 0.75
 		end
 		Module.db.version = 2
+	end
+	-- Largeur par defaut reduite (20 % -> 17 %) : contenu plus compact.
+	if Module.db.version < 3 then
+		if Module.db.width == 20 then
+			Module.db.width = 17
+		end
+		Module.db.version = 3
+	end
+
+	-- Le bouton "T" du tiroir donne acces au menu : pas de pastille sur la
+	-- minimap, qui en masquerait un coin.
+	if drawers.right then
+		T.minimapButtonElsewhere = true
+		if T.UpdateMinimapButton then
+			T:UpdateMinimapButton()
+		end
 	end
 
 	pcall(MeasureMap) -- avant tout deplacement de la minimap
