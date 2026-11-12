@@ -23,6 +23,14 @@ T.media = {
 	icon = "Interface\\AddOns\\TharokUI\\Media\\icon",
 	glyph = "Interface\\AddOns\\TharokUI\\Media\\icon-glyph",
 	noise = "Interface\\AddOns\\TharokUI\\Media\\noise", -- grain des surfaces
+	-- Pinceau (voir Media/generate_brush.py) : lavis des surfaces, trait sec,
+	-- bords effiloches des panneaux, remplissage des barres.
+	wash = "Interface\\AddOns\\TharokUI\\Media\\brush-wash",
+	stroke = "Interface\\AddOns\\TharokUI\\Media\\brush-stroke",
+	edgeLeft = "Interface\\AddOns\\TharokUI\\Media\\brush-edge-left",
+	edgeRight = "Interface\\AddOns\\TharokUI\\Media\\brush-edge-right",
+	edgeTop = "Interface\\AddOns\\TharokUI\\Media\\brush-edge-top",
+	bar = "Interface\\AddOns\\TharokUI\\Media\\brush-bar",
 }
 
 T.colors = {

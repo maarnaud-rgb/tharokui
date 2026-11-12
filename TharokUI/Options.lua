@@ -414,7 +414,7 @@ local function GeneralEntries()
 			-- Pas de "live" : les textures sont posees a la creation des
 			-- panneaux, il faut recharger.
 			type = "toggle",
-			label = "Matière des panneaux (grain, reflet, ombre)",
+			label = "Matière des panneaux (pinceau, grain, ombre)",
 			get = function()
 				return theme.texture
 			end,
@@ -595,8 +595,12 @@ local function BuildWindow()
 	window:Hide()
 	tinsert(UISpecialFrames, "TharokUIOptions") -- se ferme avec Echap
 
-	T:CreateSurface(window, 0.95)
-	T:CreateBorder(window)
+	-- Avec la matiere, la fenetre est une plage de peinture : cotes
+	-- effiloches, pas de cadre.
+	T:CreateSurface(window, 0.95, nil, "LEFT RIGHT")
+	if not T.TextureOn() then
+		T:CreateBorder(window)
+	end
 	T:CreateAccentLine(window, "TOP", 2)
 
 	local title = Text(window, 14, Accent())
@@ -635,10 +639,11 @@ local function BuildWindow()
 		highlight:SetAllPoints()
 		highlight:SetColorTexture(unpack(T.colors.highlight))
 
-		local marker = button:CreateTexture(nil, "BACKGROUND")
+		-- Categorie active : un coup de pinceau a la couleur d'accent.
+		local marker = T:CreateStroke(button, "BACKGROUND")
 		marker:SetAllPoints()
 		local r, g, b = Accent()
-		marker:SetColorTexture(r, g, b, 0.30)
+		marker:Paint(r, g, b, T.TextureOn() and 0.40 or 0.30)
 		marker:Hide()
 		button.marker = marker
 

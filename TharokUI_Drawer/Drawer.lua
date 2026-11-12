@@ -146,7 +146,7 @@ local function PaintBackground(drawer)
 		return
 	end
 	local r, g, b, a = BackgroundColor()
-	drawer.bg:SetColorTexture(r, g, b, a)
+	T:PaintSurface(drawer.bg, r, g, b, a)
 	local cr, cg, cb = CombatColor()
 	if drawer.border then
 		local br, bgc, bb = unpack(T.colors.border)
@@ -154,7 +154,7 @@ local function PaintBackground(drawer)
 	end
 	if drawer.accent then
 		local ar, ag, ab = unpack(T.colors.accent)
-		drawer.accent:SetColorTexture(Mix(ar, cr, combatMix), Mix(ag, cg, combatMix), Mix(ab, cb, combatMix), 0.9 * Mix(1, pulse, combatMix))
+		drawer.accent:Paint(Mix(ar, cr, combatMix), Mix(ag, cg, combatMix), Mix(ab, cb, combatMix), 0.9 * Mix(1, pulse, combatMix))
 	end
 	-- Fondu en bas du suivi de quetes : meme couleur que le fond.
 	if drawer.questFade then
@@ -802,8 +802,9 @@ local function Layout()
 		if right.barsLine then
 			right.barsLine:ClearAllPoints()
 			right.barsLine:SetShown(barsHeight > 0)
-			right.barsLine:SetPoint("TOPLEFT", right.frame, "TOPLEFT", PAD, -(barsTop - GAP / 2))
-			right.barsLine:SetPoint("TOPRIGHT", right.frame, "TOPRIGHT", -PAD, -(barsTop - GAP / 2))
+			local y = -(barsTop - GAP / 2) + right.barsLine:GetHeight() / 2
+			right.barsLine:SetPoint("TOPLEFT", right.frame, "TOPLEFT", PAD, y)
+			right.barsLine:SetPoint("TOPRIGHT", right.frame, "TOPRIGHT", -PAD, y)
 		end
 
 		right.column = {
@@ -1210,7 +1211,7 @@ local xpGauge, repGauge
 local function CreateGauge(parent, title, height)
 	local bar = CreateFrame("StatusBar", nil, parent)
 	bar:SetHeight(height)
-	bar:SetStatusBarTexture(T.media.blank)
+	bar:SetStatusBarTexture(T:BarTexture())
 	bar:SetMinMaxValues(0, 1)
 	T:CreateBackground(bar)
 	T:CreateShade(bar)
@@ -1325,9 +1326,15 @@ local function CreateDrawer(key)
 	frame:SetFrameStrata("LOW")
 	frame:EnableMouse(true) -- les clics ne traversent pas le panneau
 	-- Fond gere ici (et non par le theme) pour pouvoir le teinter en combat.
-	drawer.bg = T:CreateSurface(frame, T.colors.bg[4])
+	-- Bord ouvert (cote ecran) : la peinture s'y effiloche et le trait
+	-- d'accent le longe ; le cadre net ne garde que les trois autres cotes.
+	local open = key == "right" and "LEFT" or "TOP"
+	drawer.bg = T:CreateSurface(frame, T.colors.bg[4], nil, open)
 	drawer.border = T:CreateBorder(frame)
-	drawer.accent = T:CreateAccentLine(frame, "TOP", 2)
+	if T.TextureOn() then
+		drawer.border[open:lower()]:Hide()
+	end
+	drawer.accent = T:CreateAccentLine(frame, open, 2)
 	PaintBackground(drawer)
 	drawer.frame = frame
 
@@ -1342,18 +1349,31 @@ local function CreateDrawer(key)
 		handle:SetSize(64, 12)
 		handle:SetPoint("BOTTOM", frame, "TOP", 0, 0)
 	end
-	T:CreateBackground(handle)
-	T:CreateBorder(handle)
-	local mark = handle:CreateTexture(nil, "ARTWORK")
-	mark:SetPoint("TOPLEFT", 3, -3)
-	mark:SetPoint("BOTTOMRIGHT", -3, 3)
-	local highlight = handle:CreateTexture(nil, "HIGHLIGHT")
-	highlight:SetAllPoints()
-	highlight:SetColorTexture(unpack(T.colors.highlight))
+	local vertical = key == "right"
+	local mark = T:CreateStroke(handle, "ARTWORK", vertical)
+	local highlight = T:CreateStroke(handle, "HIGHLIGHT", vertical)
+	if T.TextureOn() then
+		-- Une touche de peinture sombre, et un coup de pinceau d'accent dessus.
+		local dab = T:CreateStroke(handle, "BACKGROUND", vertical)
+		dab:SetPoint("TOPLEFT", -5, 5)
+		dab:SetPoint("BOTTOMRIGHT", 5, -5)
+		local r, g, b = unpack(T.colors.bg)
+		dab:Paint(r, g, b, 0.92)
+		mark:SetPoint("TOPLEFT", -1, 1)
+		mark:SetPoint("BOTTOMRIGHT", 1, -1)
+		highlight:SetAllPoints(dab)
+	else
+		T:CreateBackground(handle)
+		T:CreateBorder(handle)
+		mark:SetPoint("TOPLEFT", 3, -3)
+		mark:SetPoint("BOTTOMRIGHT", -3, 3)
+		highlight:SetAllPoints()
+	end
+	highlight:Paint(unpack(T.colors.highlight))
 
 	do
 		local r, g, b = unpack(T.colors.accent)
-		mark:SetColorTexture(r, g, b, 0.9)
+		mark:Paint(r, g, b, 0.9)
 	end
 
 	handle:SetScript("OnClick", function()
@@ -1382,17 +1402,14 @@ local function BuildRight()
 	-- Un filet entre les blocs : les elements ranges se lisent comme un seul
 	-- panneau.
 	for _, name in ipairs({ "bags", "map" }) do
-		local line = zones[name]:CreateTexture(nil, "BORDER")
-		line:SetColorTexture(1, 1, 1, 0.08)
-		line:SetPoint("BOTTOMLEFT", zones[name], "TOPLEFT", 0, GAP / 2)
-		line:SetPoint("BOTTOMRIGHT", zones[name], "TOPRIGHT", 0, GAP / 2)
-		line:SetHeight(T:Pixel(1, zones[name]))
+		local line = T:CreateRule(zones[name])
+		local y = GAP / 2 - line:GetHeight() / 2 -- centre dans l'intervalle
+		line:SetPoint("BOTTOMLEFT", zones[name], "TOPLEFT", 0, y)
+		line:SetPoint("BOTTOMRIGHT", zones[name], "TOPRIGHT", 0, y)
 	end
 	-- Meme filet entre la barre des sacs et les barres 5 et 6 (place par
 	-- Layout).
-	right.barsLine = right.frame:CreateTexture(nil, "BORDER")
-	right.barsLine:SetColorTexture(1, 1, 1, 0.08)
-	right.barsLine:SetHeight(T:Pixel(1, right.frame))
+	right.barsLine = T:CreateRule(right.frame)
 
 	-- Fondu en bas du suivi de quetes : une ligne coupee a mi-hauteur se
 	-- fond dans le tiroir au lieu d'etre tranchee net. Cadre au-dessus du

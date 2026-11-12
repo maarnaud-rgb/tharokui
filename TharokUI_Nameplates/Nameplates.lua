@@ -47,7 +47,7 @@ local function Restyle(unitFrame)
 	end
 
 	if Module.db.flatBars and healthBar.barTexture then
-		healthBar.barTexture:SetTexture(T.media.blank)
+		healthBar.barTexture:SetTexture(T:BarTexture())
 	end
 
 	-- Fond Blizzard (avec ombre asymetrique) remplace par le notre.

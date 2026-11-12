@@ -69,7 +69,7 @@ function Module:OnEnable()
 	end
 
 	if self.db.flatHealthBar and GameTooltipStatusBar then
-		GameTooltipStatusBar:SetStatusBarTexture(T.media.blank)
+		GameTooltipStatusBar:SetStatusBarTexture(T:BarTexture())
 		T:CreateShade(GameTooltipStatusBar)
 	end
 end

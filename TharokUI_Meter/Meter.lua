@@ -107,7 +107,7 @@ local function CreateRow(index)
 	bar:SetHeight(ROW_HEIGHT)
 	bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -gap - (index - 1) * (ROW_HEIGHT + gap))
 	bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -gap - (index - 1) * (ROW_HEIGHT + gap))
-	bar:SetStatusBarTexture(T.media.blank)
+	bar:SetStatusBarTexture(T:BarTexture())
 	bar:SetMinMaxValues(0, 1)
 	T:CreateShade(bar)
 
