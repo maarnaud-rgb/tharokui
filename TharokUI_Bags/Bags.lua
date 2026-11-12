@@ -40,6 +40,20 @@ local function SkinItems(frame)
 	end
 end
 
+-- Fond et bordure poses sur chaque fenetre de sac. Un autre module (le
+-- tiroir, qui empile les sacs sur son propre fond) peut les masquer.
+local decor = {}
+local decorHidden = {}
+
+function T:ShowBagDecor(frame, shown)
+	decorHidden[frame] = not shown or nil
+	local parts = decor[frame]
+	if parts then
+		parts.bg:SetShown(shown)
+		parts.border:SetShown(shown)
+	end
+end
+
 local function SkinFrame(frame)
 	if not frame or skinnedFrames[frame] then
 		return
@@ -48,8 +62,13 @@ local function SkinFrame(frame)
 
 	T:Fade(frame.NineSlice)
 	T:Fade(frame.Bg)
-	T:CreateBackground(frame)
-	T:CreateBorder(frame, frame, 1, 1)
+	decor[frame] = {
+		bg = T:CreateBackground(frame),
+		border = T:CreateBorder(frame, frame, 1, 1),
+	}
+	if decorHidden[frame] then
+		T:ShowBagDecor(frame, false)
+	end
 
 	SkinItems(frame)
 	-- Les boutons sont (re)attribues a chaque mise a jour du sac.

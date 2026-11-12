@@ -1,7 +1,4 @@
 <Bindings>
-	<Binding name="THAROKUI_DRAWER_RIGHT" category="Tharok UI">
-		TharokUI_ToggleDrawer("right")
-	</Binding>
 	<Binding name="THAROKUI_DRAWER_BOTTOM" category="Tharok UI">
 		TharokUI_ToggleDrawer("bottom")
 	</Binding>

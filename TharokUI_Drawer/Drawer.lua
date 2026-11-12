@@ -9,7 +9,7 @@
 --     de droite, qui occupe toute la hauteur.
 --
 -- La disposition est imposee, pour que le mode tiroir soit le meme partout :
--- barres 1 a 4 sur une ligne chacune, barres 5 et 6 en colonne, menu systeme
+-- barres 1 a 4 sur une ligne chacune, barres 5 et 6 en ligne, menu systeme
 -- et barre des sacs en ligne, quels que soient les reglages du mode Edition.
 -- Un avertissement le rappelle a la premiere activation. Si Questie est
 -- installe, c'est son suivi de quetes qui est range dans le tiroir.
@@ -21,13 +21,13 @@
 --
 -- Combat : les barres d'action sont des frames protegees, qu'un addon ne peut
 -- ni deplacer ni masquer en combat. Un tiroir ne bouge donc jamais pendant un
--- combat. Non epingle, il se ferme d'un coup a l'entree en combat et se
--- rouvre a la sortie s'il etait ouvert ; epingle, il reste comme il est et
--- prend l'opacite de combat.
+-- combat : il reste tel quel, son fond vire au rouge leger et il prend
+-- l'opacite de combat.
 --
 --   /tharok drawer right|bottom    ouvre ou ferme un tiroir
---   Raccourcis : Options du jeu > Raccourcis > Tharok UI. La touche des sacs
---   ouvre et ferme aussi le tiroir de droite.
+--   Raccourci du tiroir du bas : Options du jeu > Raccourcis > Tharok UI.
+--   Le tiroir de droite est ouvert a chaque chargement ; la touche des sacs
+--   ouvre et ferme les sacs seulement, jamais le tiroir.
 
 local T = TharokUI
 
@@ -38,16 +38,15 @@ local Module = T:RegisterModule("Drawer", {
 		width = 20, -- largeur du tiroir de droite, en % de l'ecran
 		alpha = 0.75, -- opacite par defaut
 		version = 0, -- version des reglages (migrations)
-		combatAlpha = 0.6, -- opacite en combat (tiroir epingle)
+		combatAlpha = 0.6, -- opacite en combat
 		barScale = 0.8, -- echelle des barres d'action 1 a 4 (tiroir du bas)
-		sideBarScale = 0.5, -- echelle des barres 5 et 6 (tiroir de droite)
 		bags = true, -- contenu des sacs dans le tiroir de droite
 		chat = true, -- le chat suit le tiroir du bas
 		tooltip = true, -- infobulle decalee quand le tiroir de droite est ouvert
 		hideStatusBars = true, -- masque les barres d'experience / reputation du jeu
 		consent = 0, -- 1 une fois l'avertissement accepte
-		right = { use = true, open = true, pinned = false },
-		bottom = { use = true, open = true, pinned = true },
+		right = { use = true, open = true },
+		bottom = { use = true, open = true },
 	},
 })
 
@@ -82,11 +81,27 @@ local animator
 -- Position et opacite d'un tiroir
 -------------------------------------------------------------------------------
 
-local function BaseAlpha(drawer)
-	if inCombat and drawer.db.pinned then
+local function BaseAlpha()
+	if inCombat then
 		return Module.db.combatAlpha
 	end
 	return Module.db.alpha
+end
+
+-- Fond du tiroir : noir leger hors combat (couleur du theme), rouge leger
+-- en combat. Une texture n'est pas protegee : on peut la changer en combat.
+local COMBAT_BG = { 0.32, 0.03, 0.03 }
+
+local function PaintBackground(drawer)
+	local bg = drawer.bg
+	if not bg then
+		return
+	end
+	local r, g, b, a = unpack(T.colors.bg)
+	if inCombat then
+		r, g, b = unpack(COMBAT_BG)
+	end
+	bg:SetColorTexture(r, g, b, a)
 end
 
 local function ChatFrames()
@@ -108,7 +123,7 @@ end
 local function Place(drawer)
 	local frame = drawer.frame
 	local progress = drawer.progress
-	local alpha = BaseAlpha(drawer) * progress
+	local alpha = BaseAlpha() * progress
 	frame:SetAlpha(alpha)
 
 	if drawer.key == "bottom" and Module.db.chat then
@@ -158,23 +173,6 @@ local function Animate(_, elapsed)
 	end
 end
 
-local syncingBags = false
-
-local function SyncBags(open)
-	if not Module.db.bags or syncingBags then
-		return
-	end
-	syncingBags = true
-	if open then
-		if OpenAllBags then
-			OpenAllBags()
-		end
-	elseif CloseAllBags then
-		CloseAllBags()
-	end
-	syncingBags = false
-end
-
 -- Ouvre ou ferme un tiroir. `remember` : memorise l'etat (geste du joueur).
 local function SetOpen(drawer, open, remember, instant)
 	if InCombatLockdown() then
@@ -184,16 +182,12 @@ local function SetOpen(drawer, open, remember, instant)
 	if remember then
 		drawer.db.open = open
 	end
-	drawer.reopen = nil
 	drawer.target = open and 1 or 0
 	if instant then
 		drawer.progress = drawer.target
 		Place(drawer)
 	else
 		animator:Show()
-	end
-	if drawer.key == "right" and remember then
-		SyncBags(open)
 	end
 	return true
 end
@@ -209,7 +203,6 @@ function TharokUI_ToggleDrawer(key)
 	Toggle(key)
 end
 
-BINDING_NAME_THAROKUI_DRAWER_RIGHT = "Tiroir de droite"
 BINDING_NAME_THAROKUI_DRAWER_BOTTOM = "Tiroir du bas"
 
 -------------------------------------------------------------------------------
@@ -222,6 +215,7 @@ BINDING_NAME_THAROKUI_DRAWER_BOTTOM = "Tiroir du bas"
 local adopted = {}
 local pending = {}
 local placing = false
+local QueueLayout -- defini plus bas, utilise par PlaceBar
 
 -- Apres chaque placement, on retient ou se trouve l'element (et, pour une
 -- barre ou une rangee, ses boutons). Un controle periodique compare : si le
@@ -238,6 +232,7 @@ local function Snap(frame)
 		x = x or 0,
 		y = y or 0,
 		scale = frame:GetScale(),
+		width = frame:GetWidth(),
 		parent = frame:GetParent(),
 	}
 end
@@ -250,6 +245,13 @@ local function Drifted(snap)
 	end
 	if math.abs((x or 0) - snap.x) > 0.5 or math.abs((y or 0) - snap.y) > 0.5 then
 		return true
+	end
+	if snap.frame.actionButtons or snap.frame.action then
+		-- Barre ou bouton d'action : le jeu peut changer sa taille (taille
+		-- des icones du mode Edition, barre principale...).
+		if math.abs((frame:GetWidth() or 0) - (snap.width or 0)) > 0.5 then
+			return true
+		end
 	end
 	return frame:GetParent() ~= snap.parent or math.abs(frame:GetScale() - snap.scale) > 0.001
 end
@@ -438,8 +440,21 @@ end
 local function PlaceBar(bar)
 	local slot = (drawers.right and drawers.right.slots[bar]) or (drawers.bottom and drawers.bottom.slots[bar])
 	local size, count, step = BarMetrics(bar)
-	if not slot or not size then
+	if not size then
 		return
+	end
+	-- Barre apparue apres la mise en page (vehicule, changement de barre...)
+	-- ou boutons redimensionnes par le jeu : les mesures sont perimees, on
+	-- refait la mise en page plutot que de la laisser a sa taille Blizzard.
+	if not slot then
+		if bar:IsShown() then
+			QueueLayout()
+		end
+		return
+	end
+	local width, height = BarSize(bar, slot.vertical)
+	if math.abs(width - slot.w) > 1 or math.abs(height - slot.h) > 1 then
+		QueueLayout()
 	end
 
 	for i = 1, count do
@@ -549,45 +564,44 @@ local function Layout()
 
 		-- Tout en haut, sans marge : jauges d'experience et de reputation.
 		local topBar = XP_HEIGHT + REP_HEIGHT
-		local firstTop = topBar + PAD
 
-		-- Bande de droite, sur toute la hauteur : barres 5 et 6 en colonne en
-		-- haut, menu systeme en colonne en bas, acces au menu tout en bas.
-		local sideBars, barsWidth, barsHeight = {}, 0, 0
+		-- Juste sous les jauges : le menu systeme en ligne, et l'acces au menu
+		-- Tharok UI au bout de la ligne.
+		local menuTop = topBar + GAP
+		SetZone(zones.menu, right.frame, PAD, menuTop, right.size - 2 * PAD - STRIP_MIN - GAP, MENU_HEIGHT)
+		SetZone(zones.tools, right.frame, right.size - PAD - STRIP_MIN, menuTop, STRIP_MIN, MENU_HEIGHT)
+		local firstTop = menuTop + MENU_HEIGHT + PAD
+
+		-- Une seule colonne de contenu, sur toute la largeur du tiroir : tous
+		-- les blocs ont les memes bords gauche et droit.
+		local contentWidth = right.size - 2 * PAD
+
+		-- Barres 5 et 6 : en ligne, au-dessus de la minimap, a l'echelle qui
+		-- fait tenir la barre 5 dans la largeur. La barre 6 prend la meme
+		-- taille de bouton.
+		local sideBars, barsHeight = {}, 0
+		local buttonSize -- taille d'un bouton a l'ecran, fixee par la barre 5
 		for _, name in ipairs(RIGHT_BARS) do
 			local bar = _G[name]
 			local width, height = nil, nil
 			if bar and bar:IsShown() then
-				width, height = BarSize(bar, true)
+				width, height = BarSize(bar, false)
 			end
 			if width then
-				local scale = math.min(db.sideBarScale, (screenHeight * 0.45) / height)
+				local size = BarMetrics(bar)
+				local scale
+				if buttonSize then
+					scale = buttonSize / size
+				else
+					scale = math.min(1, contentWidth / width)
+					buttonSize = size * scale
+				end
 				sideBars[#sideBars + 1] = { bar = bar, scale = scale, w = width, h = height }
-				barsWidth = barsWidth + width * scale + GAP
-				barsHeight = math.max(barsHeight, height * scale)
+				barsHeight = barsHeight + height * scale + BUTTON_GAP
 			end
 		end
-		local stripWidth = math.max(barsWidth - GAP, STRIP_MIN)
-		local stripX = right.size - PAD - stripWidth
+		barsHeight = math.max(barsHeight - BUTTON_GAP, 0)
 
-		local x = right.size - PAD - math.max(barsWidth - GAP, 0)
-		for _, item in ipairs(sideBars) do
-			right.slots[item.bar] =
-				{ drawer = right, vertical = true, x = x, top = firstTop, scale = item.scale, w = item.w, h = item.h }
-			x = x + item.w * item.scale + GAP
-		end
-
-		local menuTop = firstTop + barsHeight + 2 * GAP
-		local toolsHeight = 20
-		SetZone(zones.menu, right.frame, right.size - PAD - STRIP_MIN, menuTop, STRIP_MIN,
-			screenHeight - menuTop - PAD - toolsHeight - GAP)
-		SetZone(zones.tools, right.frame, right.size - PAD - STRIP_MIN, screenHeight - PAD - toolsHeight,
-			STRIP_MIN, toolsHeight)
-		SetZone(zones.strip, right.frame, stripX - GAP, topBar, stripWidth + GAP + PAD, screenHeight - topBar)
-
-		-- Colonne de contenu : quetes, sacs, barre des sacs, minimap. Tous les
-		-- blocs ont les memes bords gauche et droit.
-		local contentWidth = stripX - GAP - 2 * PAD
 		local mapScale, mapHeight = 1, contentWidth
 		if MinimapCluster and MinimapCluster:GetWidth() > 0 then
 			-- La carte (et non son cadre) prend toute la largeur du contenu.
@@ -600,11 +614,27 @@ local function Layout()
 		end
 		right.mapScale = mapScale
 
+		local mapTop = screenHeight - mapHeight
+		local barsTop = mapTop - GAP - barsHeight
+		local y = barsTop
+		for _, item in ipairs(sideBars) do
+			right.slots[item.bar] = {
+				drawer = right,
+				vertical = false,
+				x = PAD,
+				top = y,
+				scale = item.scale,
+				w = item.w,
+				h = item.h,
+			}
+			y = y + item.h * item.scale + BUTTON_GAP
+		end
+
 		right.column = {
 			x = PAD,
 			width = contentWidth,
 			top = firstTop,
-			bottom = screenHeight - mapHeight - GAP,
+			bottom = (barsHeight > 0 and barsTop or mapTop) - GAP,
 		}
 		ZoneColumn()
 		SetZone(zones.map, right.frame, PAD, screenHeight - mapHeight, contentWidth, mapHeight)
@@ -653,8 +683,21 @@ local function Layout()
 	end
 end
 
-local function QueueLayout()
-	T:AfterCombat(Layout)
+-- Une seule mise en page en attente a la fois, a la frame suivante (evite
+-- une recursion Layout -> PlaceBar -> Layout).
+local layoutQueued = false
+
+function QueueLayout()
+	if layoutQueued then
+		return
+	end
+	layoutQueued = true
+	C_Timer.After(0, function()
+		T:AfterCombat(function()
+			layoutQueued = false
+			Layout()
+		end)
+	end)
 end
 
 -------------------------------------------------------------------------------
@@ -676,6 +719,11 @@ local function StripBag(frame)
 	T:Fade(frame.TitleContainer)
 	T:Fade(frame.NineSlice)
 	T:Fade(frame.Bg)
+	-- Le tiroir fournit le fond : le fond et la bordure du module Sacs, poses
+	-- sur chaque sac empile, recouvriraient la rangee du sac du dessus.
+	if T.ShowBagDecor then
+		T:ShowBagDecor(frame, false)
+	end
 	local close = frame.CloseButton
 	if close then
 		close:SetAlpha(0)
@@ -704,7 +752,167 @@ end
 
 -- Blizzard replace les sacs a chaque ouverture : on les empile dans le
 -- tiroir, a une echelle commune qui fait tout tenir dans la zone.
+local REAGENT_BAG = 5
+local REAGENT_TINT = { 0.30, 0.75, 0.45, 0.30 } -- cases du sac de composants
+local tints = {}
+
+-- Hauteur de l'en-tete d'une fenetre de sac (titre, recherche) : l'espace
+-- entre le haut de la fenetre et la premiere rangee de cases.
+-- Mesuree une seule fois par sac : une fois les cases replacees par nos
+-- soins, la mesurer a nouveau la ferait deriver.
+local headerCache = {}
+
+local function HeaderHeight(frame)
+	if headerCache[frame] then
+		return headerCache[frame]
+	end
+	if not frame.EnumerateValidItems then
+		return 0
+	end
+	local frameTop = frame:GetTop()
+	local highest
+	for _, button in frame:EnumerateValidItems() do
+		local top = button and button:GetTop()
+		if top then
+			top = top * button:GetEffectiveScale() / frame:GetEffectiveScale()
+			highest = highest and math.max(highest, top) or top
+		end
+	end
+	if not frameTop or not highest then
+		return 0
+	end
+	headerCache[frame] = math.max(0, frameTop - highest - 2)
+	return headerCache[frame]
+end
+
+-- Teinte des cases du sac de composants, pour les distinguer sans les
+-- separer. Recalculee a chaque placement : les boutons sont recycles.
+local function TintItems(frame)
+	if not frame.EnumerateValidItems then
+		return
+	end
+	for _, button in frame:EnumerateValidItems() do
+		if button then
+			local tint = tints[button]
+			if not tint then
+				tint = button:CreateTexture(nil, "BACKGROUND", nil, -7)
+				tint:SetAllPoints()
+				tint:SetColorTexture(unpack(REAGENT_TINT))
+				tints[button] = tint
+			end
+			local id = button.GetBagID and button:GetBagID()
+			tint:SetShown(id == REAGENT_BAG)
+		end
+	end
+end
+
+-- Grille des cases d'un sac : position de chaque colonne (distance entre le
+-- bord droit du sac et le bord gauche de la case), pas entre deux rangees.
+local function GridOf(frame)
+	if not frame.EnumerateValidItems then
+		return
+	end
+	local right, top = frame:GetRight(), frame:GetTop()
+	if not right or not top then
+		return
+	end
+	local scale = frame:GetEffectiveScale()
+	local lefts, tops = {}, {}
+	local size
+	for _, button in frame:EnumerateValidItems() do
+		local left, buttonTop = button and button:GetLeft(), button and button:GetTop()
+		if left and buttonTop then
+			local ratio = button:GetEffectiveScale() / scale
+			lefts[#lefts + 1] = left * ratio
+			tops[#tops + 1] = buttonTop * ratio
+			size = size or button:GetWidth() * ratio
+		end
+	end
+	if #lefts == 0 then
+		return
+	end
+
+	-- Valeurs distinctes (a un pixel pres), triees.
+	local function Distinct(values, descending)
+		table.sort(values, function(a, b)
+			if descending then
+				return a > b
+			end
+			return a < b
+		end)
+		local list = {}
+		for _, value in ipairs(values) do
+			if #list == 0 or math.abs(list[#list] - value) > 1 then
+				list[#list + 1] = value
+			end
+		end
+		return list
+	end
+
+	local columns = {}
+	for _, left in ipairs(Distinct(lefts)) do
+		columns[#columns + 1] = right - left
+	end
+	local rows = Distinct(tops, true)
+	local rowStep = #rows > 1 and (rows[1] - rows[2]) or (size + 4)
+	return { columns = columns, rowStep = rowStep }
+end
+
+-- Range les cases du sac de composants sur la grille du sac principal : meme
+-- nombre de colonnes, memes positions, donc moins de rangees.
+local function RegridReagents(frame, grid, header)
+	if not grid or InCombatLockdown() or not frame.EnumerateValidItems then
+		return
+	end
+	local buttons = {}
+	for _, button in frame:EnumerateValidItems() do
+		if button then
+			buttons[#buttons + 1] = button
+		end
+	end
+	if #buttons == 0 then
+		return
+	end
+	table.sort(buttons, function(a, b)
+		return a:GetID() < b:GetID()
+	end)
+
+	local count = #grid.columns
+	for index, button in ipairs(buttons) do
+		local row, column = math.floor((index - 1) / count), (index - 1) % count
+		local buttonScale = button:GetScale()
+		button:ClearAllPoints()
+		button:SetPoint(
+			"TOPLEFT",
+			frame,
+			"TOPRIGHT",
+			-grid.columns[column + 1] / buttonScale,
+			-(header + row * grid.rowStep) / buttonScale
+		)
+	end
+	local rows = math.ceil(#buttons / count)
+	frame:SetHeight(header + rows * grid.rowStep + 2)
+end
+
+local regridHooks = {}
+local placingBags = false
+local PlaceBagsNow
+
+-- Redimensionner le sac de composants relance sa mise a jour Blizzard, que
+-- l'on suit : sans garde, PlaceBags se rappellerait en boucle.
 local function PlaceBags()
+	if placingBags then
+		return
+	end
+	placingBags = true
+	local ok, err = pcall(PlaceBagsNow)
+	placingBags = false
+	if not ok then
+		error(err, 0)
+	end
+end
+
+function PlaceBagsNow()
 	local right = drawers.right
 	if not right or not Module.db.bags or not right.column then
 		return
@@ -731,15 +939,36 @@ local function PlaceBags()
 			end
 			return
 		end
-		SetOpen(right, true, true)
+		-- Tiroir rentre a la main : on le ressort pour montrer les sacs (la
+		-- touche des sacs ne le referme jamais).
+		SetOpen(right, true, false)
 	end
 
+	-- Les sacs suivants (dont le sac de composants) perdent leur en-tete et se
+	-- collent sous le premier : un seul bloc de cases a l'ecran.
+	local headers = {}
+	local grid = GridOf(frames[1])
+	local regridHooked = regridHooks
+	for i, frame in ipairs(frames) do
+		headers[i] = i > 1 and HeaderHeight(frame) or 0
+		local id = frame.GetBagID and frame:GetBagID() or frame:GetID()
+		if i > 1 and id == REAGENT_BAG then
+			RegridReagents(frame, grid, headers[i])
+			-- Blizzard remet ses cases en place quand le sac change de taille.
+			if not regridHooked[frame] and frame.UpdateItemLayout then
+				regridHooked[frame] = true
+				hooksecurefunc(frame, "UpdateItemLayout", function()
+					T.SafeCall(PlaceBags)
+				end)
+			end
+		end
+	end
 	local totalHeight, maxWidth = 0, 1
-	for _, frame in ipairs(frames) do
-		totalHeight = totalHeight + frame:GetHeight() + GAP
+	for i, frame in ipairs(frames) do
+		totalHeight = totalHeight + frame:GetHeight() - headers[i] + (i > 1 and BUTTON_GAP or 0)
 		maxWidth = math.max(maxWidth, frame:GetWidth())
 	end
-	totalHeight = math.max(totalHeight - GAP, 1)
+	totalHeight = math.max(totalHeight, 1)
 	-- Toute la largeur de la colonne (agrandis au besoin), tant que la hauteur
 	-- reste dans la limite accordee aux sacs.
 	local scale = math.max(0.3, math.min(1.6, right.column.width / maxWidth, MaxBagHeight() / totalHeight))
@@ -760,26 +989,27 @@ local function PlaceBags()
 
 	local zone = zones.bags
 	local y = 0
-	for _, frame in ipairs(frames) do
+	for i, frame in ipairs(frames) do
 		StripBag(frame)
 		frame:SetParent(zone)
 		frame:SetScale(scale)
 		frame:ClearAllPoints()
-		frame:SetPoint("TOPRIGHT", zone, "TOPRIGHT", 0, -y)
-		y = y + frame:GetHeight() + GAP
-	end
-end
-
--- Touche des sacs : le tiroir se ferme quand le dernier sac se ferme.
-local function OnBagToggle()
-	local right = drawers.right
-	if syncingBags or not right or not Module.db.bags then
-		return
-	end
-	if #OpenBagFrames() == 0 and right.target == 1 and not InCombatLockdown() then
-		syncingBags = true
-		SetOpen(right, false, true)
-		syncingBags = false
+		local header = headers[i]
+		if i > 1 then
+			y = y + BUTTON_GAP
+			-- Detail de l'en-tete masque, qui recouvre le bas du sac du dessus :
+			-- il ne doit pas intercepter la souris.
+			frame:SetHitRectInsets(0, 0, header, 0)
+			for _, part in ipairs({ frame.SearchBox, frame.FilterDropdown, frame.TitleContainer }) do
+				T:Fade(part)
+				if part and part.EnableMouse then
+					part:EnableMouse(false)
+				end
+			end
+		end
+		frame:SetPoint("TOPRIGHT", zone, "TOPRIGHT", 0, -(y - header))
+		y = y + frame:GetHeight() - header
+		TintItems(frame)
 	end
 end
 
@@ -885,13 +1115,17 @@ local function CreateDrawer(key)
 		size = 100,
 		chatFrames = {},
 	}
-	drawer.progress = drawer.db.open and 1 or 0
+	-- Le tiroir de droite (sacs, quetes, minimap) s'ouvre toujours au
+	-- chargement ; celui du bas reprend son dernier etat.
+	drawer.progress = (key == "right" or drawer.db.open) and 1 or 0
 	drawer.target = drawer.progress
 
 	local frame = CreateFrame("Frame", "TharokUIDrawer" .. (key == "right" and "Right" or "Bottom"), UIParent)
 	frame:SetFrameStrata("LOW")
 	frame:EnableMouse(true) -- les clics ne traversent pas le panneau
-	T:CreateBackground(frame)
+	-- Fond gere ici (et non par le theme) pour pouvoir le teinter en combat.
+	drawer.bg = T:CreateBackground(frame, nil, T.colors.bg[4])
+	PaintBackground(drawer)
 	T:CreateBorder(frame)
 	T:CreateAccentLine(frame, key == "right" and "TOP" or "TOP", 2)
 	drawer.frame = frame
@@ -899,7 +1133,7 @@ local function CreateDrawer(key)
 	-- Poignee : toujours a l'ecran, collee au bord interieur du tiroir.
 	local handle = CreateFrame("Button", nil, UIParent)
 	handle:SetFrameStrata("MEDIUM")
-	handle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	handle:RegisterForClicks("LeftButtonUp")
 	if key == "right" then
 		handle:SetSize(12, 64)
 		handle:SetPoint("RIGHT", frame, "LEFT", 0, 0)
@@ -916,31 +1150,18 @@ local function CreateDrawer(key)
 	highlight:SetAllPoints()
 	highlight:SetColorTexture(unpack(T.colors.highlight))
 
-	-- Repere : couleur d'accent quand le tiroir est epingle, gris sinon.
-	function drawer.UpdateHandle()
-		if drawer.db.pinned then
-			local r, g, b = unpack(T.colors.accent)
-			mark:SetColorTexture(r, g, b, 0.9)
-		else
-			mark:SetColorTexture(0.5, 0.5, 0.5, 0.6)
-		end
+	do
+		local r, g, b = unpack(T.colors.accent)
+		mark:SetColorTexture(r, g, b, 0.9)
 	end
-	drawer.UpdateHandle()
 
-	handle:SetScript("OnClick", function(_, button)
-		if button == "RightButton" then
-			drawer.db.pinned = not drawer.db.pinned
-			drawer.UpdateHandle()
-			T:Print("tiroir :", drawer.db.pinned and "epingle" or "libre (se ferme en combat)")
-		else
-			Toggle(key)
-		end
+	handle:SetScript("OnClick", function()
+		Toggle(key)
 	end)
 	handle:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
 		GameTooltip:AddLine(key == "right" and "Tiroir de droite" or "Tiroir du bas")
 		GameTooltip:AddLine("Clic : ouvrir ou fermer", 1, 1, 1)
-		GameTooltip:AddLine("Clic droit : épingler ou libérer", 1, 1, 1)
 		GameTooltip:Show()
 	end)
 	handle:SetScript("OnLeave", function()
@@ -953,15 +1174,12 @@ end
 
 local function BuildRight()
 	local right = CreateDrawer("right")
-	for _, name in ipairs({ "strip", "menu", "bagBar", "quests", "bags", "map", "tools" }) do
+	for _, name in ipairs({ "menu", "bagBar", "quests", "bags", "map", "tools" }) do
 		zones[name] = CreateFrame("Frame", nil, right.frame)
 	end
 
-	-- Bande de droite legerement plus sombre, et un filet entre les blocs :
-	-- les elements ranges se lisent comme un seul panneau.
-	local stripFill = zones.strip:CreateTexture(nil, "BACKGROUND")
-	stripFill:SetAllPoints()
-	stripFill:SetColorTexture(0, 0, 0, 0.25)
+	-- Un filet entre les blocs : les elements ranges se lisent comme un seul
+	-- panneau.
 	for _, name in ipairs({ "bags", "map" }) do
 		local line = zones[name]:CreateTexture(nil, "BORDER")
 		line:SetColorTexture(1, 1, 1, 0.08)
@@ -978,7 +1196,7 @@ local function BuildRight()
 	repGauge:SetPoint("TOPLEFT", right.frame, "TOPLEFT", 0, -XP_HEIGHT)
 	repGauge:SetPoint("TOPRIGHT", right.frame, "TOPRIGHT", 0, -XP_HEIGHT)
 
-	-- Acces au menu Tharok UI, en bas de la bande de droite.
+	-- Acces au menu Tharok UI, au bout de la ligne du menu systeme.
 	local menu = CreateFrame("Button", nil, zones.tools)
 	menu:SetAllPoints()
 	T:CreateBackground(menu)
@@ -1068,6 +1286,9 @@ local function AdoptAll()
 			return
 		end
 		Adopt(bar, PlaceBar)
+		-- Une barre qui apparait ou disparait change la hauteur du tiroir.
+		bar:HookScript("OnShow", QueueLayout)
+		bar:HookScript("OnHide", QueueLayout)
 		-- Blizzard realigne les boutons a chaque changement de la barre.
 		if bar.UpdateGridLayout then
 			hooksecurefunc(bar, "UpdateGridLayout", function()
@@ -1123,7 +1344,7 @@ local function AdoptAll()
 			end, 60)
 		end
 
-		AdoptRow(MicroMenuContainer, MicroMenu, zones.menu, "BOTTOM", true)
+		AdoptRow(MicroMenuContainer, MicroMenu, zones.menu, "CENTER", false)
 		-- Cadre Blizzard du menu systeme : les textures posees directement sur
 		-- le conteneur et sur le menu (les boutons, eux, sont des enfants).
 		for _, holder in ipairs({ MicroMenuContainer, MicroMenu }) do
@@ -1163,12 +1384,6 @@ local function AdoptAll()
 				hooksecurefunc("UpdateContainerFrameAnchors", function()
 					T.SafeCall(PlaceBags)
 				end)
-			end
-			if ToggleBackpack then
-				hooksecurefunc("ToggleBackpack", OnBagToggle)
-			end
-			if ToggleAllBags then
-				hooksecurefunc("ToggleAllBags", OnBagToggle)
 			end
 		end
 
@@ -1273,32 +1488,29 @@ local function Setup()
 	T:On("DISPLAY_SIZE_CHANGED", QueueLayout)
 	T:On("UI_SCALE_CHANGED", QueueLayout)
 
-	-- A cet evenement le verrouillage de combat n'est pas encore actif : on
-	-- peut encore fermer les tiroirs, mais d'un coup (pas le temps d'animer).
-	T:On("PLAYER_REGEN_DISABLED", function()
+	-- Les tiroirs restent tels quels en combat : seuls leur fond (rouge
+	-- leger) et leur opacite changent. Une animation en cours est terminee
+	-- d'un coup, le verrouillage de combat n'etant pas encore actif ici.
+	local function SetCombat(state)
+		inCombat = state
 		for _, drawer in pairs(drawers) do
-			local wasOpen = drawer.target == 1
-			drawer.progress = drawer.target
-			if not drawer.db.pinned and wasOpen then
-				drawer.progress, drawer.target = 0, 0
-				drawer.reopen = true
+			if state then
+				drawer.progress = drawer.target
 			end
-		end
-		inCombat = true
-		for _, drawer in pairs(drawers) do
+			PaintBackground(drawer)
 			Place(drawer)
 		end
+	end
+	T:On("PLAYER_REGEN_DISABLED", function()
+		SetCombat(true)
 	end)
 	T:On("PLAYER_REGEN_ENABLED", function()
-		inCombat = false
+		SetCombat(false)
+	end)
+	-- Changement de theme : on repeint le fond avec la nouvelle couleur.
+	hooksecurefunc(T, "RefreshTheme", function()
 		for _, drawer in pairs(drawers) do
-			if drawer.reopen then
-				drawer.reopen = nil
-				drawer.target = 1
-				animator:Show()
-			else
-				Place(drawer)
-			end
+			PaintBackground(drawer)
 		end
 	end)
 end
@@ -1329,9 +1541,6 @@ local function Nested(key, field, label, live)
 		end,
 		set = function(value)
 			Module.db[key][field] = value
-			if drawers[key] then
-				drawers[key].UpdateHandle()
-			end
 		end,
 	}
 end
@@ -1370,7 +1579,6 @@ Module.options = {
 
 	{ type = "header", label = "Tiroir de droite" },
 	Nested("right", "use", "Utiliser le tiroir de droite"),
-	Nested("right", "pinned", "Épinglé (ne se ferme pas en combat)", true),
 	LiveRange("width", "Largeur", 12, 35, 1, 1, true),
 	{ type = "toggle", key = "bags", label = "Contenu des sacs dans le tiroir" },
 	{ type = "toggle", key = "tooltip", label = "Décaler l'infobulle quand le tiroir est ouvert" },
@@ -1378,14 +1586,12 @@ Module.options = {
 
 	{ type = "header", label = "Tiroir du bas" },
 	Nested("bottom", "use", "Utiliser le tiroir du bas"),
-	Nested("bottom", "pinned", "Épinglé (ne se ferme pas en combat)", true),
 	{ type = "toggle", key = "chat", label = "Chat rangé dans le tiroir (à gauche des barres)" },
 
 	{ type = "header", label = "Apparence" },
 	LiveRange("alpha", "Opacité par défaut", 20, 100, 5, 100),
-	LiveRange("combatAlpha", "Opacité en combat (tiroir épinglé)", 20, 100, 5, 100),
+	LiveRange("combatAlpha", "Opacité en combat", 20, 100, 5, 100),
 	LiveRange("barScale", "Échelle des barres 1 à 4 (tiroir du bas)", 50, 100, 5, 100, true),
-	LiveRange("sideBarScale", "Échelle des barres 5 et 6 (tiroir de droite)", 30, 100, 5, 100, true),
 }
 
 StaticPopupDialogs["THAROKUI_DRAWER_CONFIRM"] = {
