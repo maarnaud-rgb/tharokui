@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Compteur
+## Notes: DPS et HPS du groupe ou du raid en temps reel, dans une liste deplacable.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Meter.lua

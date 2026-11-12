@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Quetes
+## Notes: Suivi des quetes epure.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Quests.lua

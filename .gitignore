@@ -1,0 +1,7 @@
+# Seuls les addons Tharok UI sont suivis dans ce dossier AddOns.
+/*
+!/.gitignore
+!/TharokUI/
+!/TharokUI_*/
+.DS_Store
+*.bak

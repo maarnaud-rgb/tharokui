@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Sacs
+## Notes: Sacs a fond sombre, emplacements carres.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Bags.lua

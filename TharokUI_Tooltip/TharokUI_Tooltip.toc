@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Infobulles
+## Notes: Infobulles a fond sombre et bordure fine.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Tooltip.lua

@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Barres d'action
+## Notes: Boutons d'action carres a bordure fine, sans decor.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+ActionBars.lua

@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Barres de nom
+## Notes: Bordure fine autour des barres de vie des barres de nom.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Nameplates.lua

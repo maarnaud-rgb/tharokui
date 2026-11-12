@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Menace
+## Notes: Colore les barres de nom ennemies du vert au rouge selon la menace, inversable en mode tank.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Threat.lua
