@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI - Groupe
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Cadres de groupe a plat, dans le meme style que la cible.
 ## Version: 0.1.0
 ## Dependencies: TharokUI

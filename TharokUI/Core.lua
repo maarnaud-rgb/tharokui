@@ -18,6 +18,11 @@ T.moduleOrder = {}
 
 T.media = {
 	blank = "Interface\\Buttons\\WHITE8X8",
+	-- Icone Tharok UI : complete (liste des addons) et "T" seul, blanc, a
+	-- teinter a la couleur d'accent.
+	icon = "Interface\\AddOns\\TharokUI\\Media\\icon",
+	glyph = "Interface\\AddOns\\TharokUI\\Media\\icon-glyph",
+	noise = "Interface\\AddOns\\TharokUI\\Media\\noise", -- grain des surfaces
 }
 
 T.colors = {
@@ -26,6 +31,16 @@ T.colors = {
 	accent = { 0.31, 0.76, 0.97 }, -- remplace par la couleur de classe au login
 	highlight = { 1, 1, 1, 0.18 },
 	pushed = { 1, 1, 1, 0.10 },
+	-- Trois niveaux de texte : principal, secondaire, (actif = accent).
+	text = { 0.93, 0.92, 0.89 },
+	textDim = { 0.58, 0.58, 0.60 },
+}
+
+-- Echelle typographique : deux tailles et un titre, partout.
+T.fontSizes = {
+	small = 10,
+	normal = 12,
+	title = 13,
 }
 
 -------------------------------------------------------------------------------
@@ -238,6 +253,8 @@ T:On("ADDON_LOADED", function(_, loadedName)
 		bgAlpha = 0.85, -- opacite des fonds sombres
 		border = { 0, 0, 0 }, -- couleur des bordures
 		shade = 0.35, -- intensite du degrade sombre des barres (0 = aucun)
+		texture = true, -- matiere des panneaux : grain, reflet, ombre portee
+		motion = true, -- animations : fondus, retour au clic, jauges glissantes
 		-- accent = { r, g, b } ; absent = couleur de classe
 	})
 	local theme = T.db.theme

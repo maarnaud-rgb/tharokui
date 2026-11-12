@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI - Barres d incantation
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Barres d incantation du joueur, du familier et de la cible encadrees, icone carree.
 ## Version: 0.1.0
 ## Dependencies: TharokUI

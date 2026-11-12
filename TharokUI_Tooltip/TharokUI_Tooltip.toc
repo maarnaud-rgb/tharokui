@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI - Infobulles
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Infobulles a fond sombre et bordure fine.
 ## Version: 0.1.0
 ## Dependencies: TharokUI

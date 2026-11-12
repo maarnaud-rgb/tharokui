@@ -35,7 +35,7 @@ local Module = T:RegisterModule("Meter", {
 local HEADER_HEIGHT = 18
 local ROW_HEIGHT = 18
 local UPDATE_INTERVAL = 0.5
-local FONT_SIZE = 11
+local FONT_SIZE = TharokUI.fontSizes.small + 1
 
 local frame, header, modeButton, segmentButton
 local rows = {}
@@ -114,14 +114,14 @@ local function CreateRow(index)
 	local value = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	value:SetPoint("RIGHT", -4, 0)
 	value:SetJustifyH("RIGHT")
-	T:StyleFont(value, FONT_SIZE)
+	T:SoftFont(value, FONT_SIZE)
 
 	local name = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	name:SetPoint("LEFT", 4, 0)
 	name:SetPoint("RIGHT", value, "LEFT", -6, 0)
 	name:SetJustifyH("LEFT")
 	name:SetWordWrap(false)
-	T:StyleFont(name, FONT_SIZE)
+	T:SoftFont(name, FONT_SIZE)
 
 	bar.name, bar.value = name, value
 	rows[index] = bar
@@ -243,7 +243,7 @@ local function CreateHeaderButton(label, onClick)
 
 	local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	text:SetPoint("CENTER")
-	T:StyleFont(text, FONT_SIZE)
+	T:SoftFont(text, FONT_SIZE, "textDim")
 	text:SetText(label)
 	button.text = text
 	button:SetWidth(52)
@@ -286,7 +286,7 @@ local function Build()
 		end
 	end)
 
-	T:CreateBackground(frame)
+	T:CreateSurface(frame, nil, true)
 	T:CreateBorder(frame)
 
 	header = CreateFrame("Frame", nil, frame)

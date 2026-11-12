@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI - Texte de combat
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Affiche a l ecran les degats et soins recus, avec un texte net.
 ## Version: 0.1.0
 ## Dependencies: TharokUI

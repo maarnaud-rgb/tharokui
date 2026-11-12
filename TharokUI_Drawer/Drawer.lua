@@ -39,6 +39,8 @@ local Module = T:RegisterModule("Drawer", {
 		alpha = 0.75, -- opacite par defaut
 		version = 0, -- version des reglages (migrations)
 		combatAlpha = 0.6, -- opacite en combat
+		idleBars = 0.5, -- opacite des barres 1 a 4 au repos (1 = toujours pleines)
+		lowMana = 30, -- seuil de mana faible en % (liseré violet en combat), 0 = jamais
 		barScale = 0.8, -- echelle des barres d'action 1 a 4 (tiroir du bas)
 		bags = true, -- contenu des sacs dans le tiroir de droite
 		chat = true, -- le chat suit le tiroir du bas
@@ -91,18 +93,52 @@ end
 -- En combat, le signal passe par le liseré (bordure et trait du haut en
 -- rouge) et une teinte tres legere du fond : le contenu reste lisible.
 -- Textures non protegees : on peut les changer en combat.
+-- Violet au lieu du rouge quand le mana est bas : combat + mana faible.
 local COMBAT_RED = { 0.9, 0.15, 0.12 }
-local COMBAT_TINT = 0.12 -- part de rouge melangee au fond
+local COMBAT_LOW_MANA = { 0.62, 0.25, 0.95 }
+local COMBAT_TINT = 0.12 -- part de couleur melangee au fond
+local lowMana = false
+
+-- Melanges animes : combatMix (0 = hors combat, 1 = combat) et manaMix
+-- (0 = rouge, 1 = violet). Les couleurs glissent au lieu de sauter.
+local combatMix, manaMix = 0, 0
+local pulse = 1 -- intensite du liseré, qui respire quand le mana est bas
+
+local function Mix(a, b, t)
+	return a + (b - a) * t
+end
+
+local function CombatColor()
+	return Mix(COMBAT_RED[1], COMBAT_LOW_MANA[1], manaMix),
+		Mix(COMBAT_RED[2], COMBAT_LOW_MANA[2], manaMix),
+		Mix(COMBAT_RED[3], COMBAT_LOW_MANA[3], manaMix)
+end
 
 local function BackgroundColor()
 	local r, g, b, a = unpack(T.colors.bg)
-	if inCombat then
-		local t = COMBAT_TINT
-		r = r + (COMBAT_RED[1] - r) * t
-		g = g + (COMBAT_RED[2] - g) * t
-		b = b + (COMBAT_RED[3] - b) * t
+	local cr, cg, cb = CombatColor()
+	local t = COMBAT_TINT * combatMix
+	return Mix(r, cr, t), Mix(g, cg, t), Mix(b, cb, t), a
+end
+
+-- Mana du joueur sous le seuil (en %). Faux pour une classe sans mana, si
+-- l'option est a 0, ou si le jeu masque la valeur (valeur secrete).
+local MANA = Enum and Enum.PowerType and Enum.PowerType.Mana or 0
+
+local function IsLowMana()
+	local threshold = Module.db.lowMana or 0
+	if threshold <= 0 then
+		return false
 	end
-	return r, g, b, a
+	local ok, low = pcall(function()
+		local max = UnitPowerMax("player", MANA)
+		local current = UnitPower("player", MANA)
+		if T.IsSecret(max) or T.IsSecret(current) or not max or max <= 0 then
+			return false
+		end
+		return current / max * 100 < threshold
+	end)
+	return ok and low or false
 end
 
 local function PaintBackground(drawer)
@@ -111,20 +147,62 @@ local function PaintBackground(drawer)
 	end
 	local r, g, b, a = BackgroundColor()
 	drawer.bg:SetColorTexture(r, g, b, a)
+	local cr, cg, cb = CombatColor()
 	if drawer.border then
-		if inCombat then
-			drawer.border:Paint(COMBAT_RED[1], COMBAT_RED[2], COMBAT_RED[3], 1)
-		else
-			drawer.border:Paint(unpack(T.colors.border))
-		end
+		local br, bgc, bb = unpack(T.colors.border)
+		drawer.border:Paint(Mix(br, cr, combatMix), Mix(bgc, cg, combatMix), Mix(bb, cb, combatMix), Mix(1, pulse, combatMix))
 	end
 	if drawer.accent then
-		local ar, ag, ab = unpack(inCombat and COMBAT_RED or T.colors.accent)
-		drawer.accent:SetColorTexture(ar, ag, ab, 0.9)
+		local ar, ag, ab = unpack(T.colors.accent)
+		drawer.accent:SetColorTexture(Mix(ar, cr, combatMix), Mix(ag, cg, combatMix), Mix(ab, cb, combatMix), 0.9 * Mix(1, pulse, combatMix))
 	end
 	-- Fondu en bas du suivi de quetes : meme couleur que le fond.
 	if drawer.questFade then
 		drawer.questFade:SetGradient("VERTICAL", CreateColor(r, g, b, math.min(1, a + 0.1)), CreateColor(r, g, b, 0))
+	end
+end
+
+local function PaintAll()
+	for _, drawer in pairs(drawers) do
+		PaintBackground(drawer)
+	end
+end
+
+-- Transitions : vers le combat (0,3 s) et entre rouge et violet (0,5 s).
+local function AnimateCombat(target)
+	local from = combatMix
+	T:Tween("drawerCombat", 0.3, function(t)
+		combatMix = Mix(from, target, t)
+		PaintAll()
+	end)
+end
+
+local function AnimateMana(target)
+	local from = manaMix
+	T:Tween("drawerMana", 0.5, function(t)
+		manaMix = Mix(from, target, t)
+		PaintAll()
+	end)
+end
+
+-- Respiration du liseré en combat avec peu de mana (1,6 s par cycle).
+local breather = CreateFrame("Frame")
+breather:Hide()
+local breathTime = 0
+breather:SetScript("OnUpdate", function(_, elapsed)
+	breathTime = breathTime + elapsed
+	pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(breathTime * math.pi * 2 / 1.6))
+	PaintAll()
+end)
+
+local function UpdateBreath()
+	if inCombat and lowMana and T.MotionOn and T.MotionOn() then
+		breathTime = 0
+		breather:Show()
+	else
+		breather:Hide()
+		pulse = 1
+		PaintAll()
 	end
 end
 
@@ -240,6 +318,27 @@ local adopted = {}
 local pending = {}
 local placing = false
 local QueueLayout -- defini plus bas, utilise par PlaceBar
+local holders = {} -- barre d'action -> support qui porte son echelle
+
+-- Le mode Edition enregistre dans sa disposition le cadre auquel chaque
+-- barre est ancree (par son nom). Au chargement suivant, il reapplique cette
+-- disposition tres tot : les cadres du tiroir et les supports des barres
+-- doivent donc exister des le chargement de l'addon, sinon "Couldn't find
+-- region named ...". Ils couvrent l'ecran tant que le tiroir ne les a pas
+-- places (module desactive : les barres restent visibles).
+local function EarlyFrame(name)
+	local frame = _G[name] or CreateFrame("Frame", name, UIParent)
+	frame:SetAllPoints(UIParent)
+	return frame
+end
+
+EarlyFrame("TharokUIDrawerRight")
+EarlyFrame("TharokUIDrawerBottom")
+for _, list in ipairs({ BOTTOM_BARS, RIGHT_BARS }) do
+	for _, barName in ipairs(list) do
+		EarlyFrame("TharokUIBarHolder" .. barName)
+	end
+end
 
 -- Apres chaque placement, on retient ou se trouve l'element (et, pour une
 -- barre ou une rangee, ses boutons). Un controle periodique compare : si le
@@ -493,17 +592,35 @@ local function PlaceBar(bar)
 		end
 	end
 
+	-- La reduction est portee par un support a nous, pas par la barre : le
+	-- gestionnaire de positions de Blizzard (UIParentPanelManager) remet
+	-- l'echelle de la barre principale a 1, y compris en combat, ou on ne
+	-- peut pas la corriger. La barre reste donc a l'echelle 1.
 	local scale = slot.scale
 	local frame = slot.drawer.frame
-	bar:SetParent(frame)
-	bar:SetSize(slot.w, slot.h)
-	bar:SetScale(scale)
-	bar:ClearAllPoints()
-	if slot.drawer.key == "right" then
-		bar:SetPoint("TOPLEFT", frame, "TOPLEFT", slot.x / scale, -slot.top / scale)
-	else
-		bar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", slot.x / scale, slot.y / scale)
+	local holder = holders[bar]
+	if not holder then
+		-- Nomme et cree des le chargement : le mode Edition peut l'enregistrer
+		-- comme ancre de la barre.
+		local holderName = "TharokUIBarHolder" .. (bar:GetName() or "")
+		holder = _G[holderName] or CreateFrame("Frame", holderName, frame)
+		holders[bar] = holder
 	end
+	holder:SetParent(frame)
+	holder:SetScale(scale)
+	holder:SetSize(slot.w, slot.h)
+	holder:ClearAllPoints()
+	if slot.drawer.key == "right" then
+		holder:SetPoint("TOPLEFT", frame, "TOPLEFT", slot.x / scale, -slot.top / scale)
+	else
+		holder:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", slot.x / scale, slot.y / scale)
+	end
+
+	bar:SetParent(holder)
+	bar:SetSize(slot.w, slot.h)
+	bar:SetScale(1)
+	bar:ClearAllPoints()
+	bar:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
 	return { bar.actionButtons[1], bar.actionButtons[count] }
 end
 
@@ -562,6 +679,25 @@ local function MeasureMap()
 	local left = (mapLeft * mapScale - clusterLeft * clusterScale) / (clusterWidth * clusterScale)
 	if width > 0.3 and width <= 1 and left >= 0 and left < 0.7 then
 		mapRatio.width, mapRatio.left = width, left
+	end
+
+	-- Bandeau (zone, heure) colle juste au-dessus de la carte : dans le cadre
+	-- Blizzard, il reste en haut et laisse un vide quand la carte est plus
+	-- petite que son cadre. La partie du cadre au-dessus du bandeau, vide,
+	-- n'est pas comptee dans la hauteur de la zone de la carte.
+	mapRatio.topCut = 0
+	local header = cluster.BorderTop
+	if header and not cluster.headerUnderneath then
+		header:ClearAllPoints()
+		header:SetPoint("BOTTOM", map, "TOP", 0, 2)
+		local clusterTop, headerTop = cluster:GetTop(), header:GetTop()
+		local clusterHeight = cluster:GetHeight()
+		if clusterTop and headerTop and clusterHeight > 0 then
+			local cut = (clusterTop * clusterScale - headerTop * header:GetEffectiveScale()) / (clusterHeight * clusterScale)
+			if cut > 0 and cut < 0.6 then
+				mapRatio.topCut = cut
+			end
+		end
 	end
 end
 
@@ -629,10 +765,12 @@ local function Layout()
 		local mapScale, mapHeight = 1, contentWidth
 		if MinimapCluster and MinimapCluster:GetWidth() > 0 then
 			-- La carte (et non son cadre) prend toute la largeur du contenu.
+			-- Hauteur utile : du haut du bandeau au bas du cadre.
+			local usefulHeight = MinimapCluster:GetHeight() * (1 - (mapRatio.topCut or 0))
 			mapScale = contentWidth / (mapRatio.width * MinimapCluster:GetWidth())
-			mapHeight = MinimapCluster:GetHeight() * mapScale
+			mapHeight = usefulHeight * mapScale
 			if mapHeight > screenHeight * 0.45 then
-				mapScale = screenHeight * 0.45 / MinimapCluster:GetHeight()
+				mapScale = screenHeight * 0.45 / usefulHeight
 				mapHeight = screenHeight * 0.45
 			end
 		end
@@ -1101,7 +1239,17 @@ local function UpdateXP()
 		return
 	end
 	local ratio = xp / xpMax
-	xpGauge:SetValue(ratio)
+	-- Gain d'experience : la jauge glisse et s'eclaire brievement ; passage
+	-- de niveau (la jauge repart de zero) : eclat dore plus marque.
+	local level = UnitLevel("player")
+	if xpGauge.lastLevel and level > xpGauge.lastLevel then
+		xpGauge:SetValue(0)
+		T:Flash(xpGauge, nil, { 1, 0.82, 0.3 }, 0.9, 1.2)
+	elseif xpGauge.lastXP and xp > xpGauge.lastXP then
+		T:Flash(xpGauge, nil, { 1, 1, 1 }, 0.45, 0.5)
+	end
+	xpGauge.lastLevel, xpGauge.lastXP = level, xp
+	T:SetSmoothValue(xpGauge, ratio, 0.6)
 	-- Du bleu vers l'or a mesure qu'on approche du niveau suivant.
 	xpGauge:SetStatusBarColor(0.25 + 0.75 * ratio, 0.55 + 0.27 * ratio, 1 - ratio)
 	xpGauge.text:SetText(format("%d%%", ratio * 100))
@@ -1138,7 +1286,7 @@ local function UpdateReputation()
 	local range = maxValue - minValue
 	local ratio = range > 0 and (value - minValue) / range or 1
 	ratio = math.max(0, math.min(1, ratio))
-	repGauge:SetValue(ratio)
+	T:SetSmoothValue(repGauge, ratio, 0.6)
 	repGauge:SetStatusBarColor(0.27, 0.78, 0.32)
 	repGauge.text:SetText("")
 	repGauge.title = name
@@ -1163,11 +1311,14 @@ local function CreateDrawer(key)
 	drawer.progress = (key == "right" or drawer.db.open) and 1 or 0
 	drawer.target = drawer.progress
 
-	local frame = CreateFrame("Frame", "TharokUIDrawer" .. (key == "right" and "Right" or "Bottom"), UIParent)
+	-- Cadre cree des le chargement (voir EarlyFrame) : on le reprend.
+	local name = "TharokUIDrawer" .. (key == "right" and "Right" or "Bottom")
+	local frame = _G[name] or CreateFrame("Frame", name, UIParent)
+	frame:ClearAllPoints()
 	frame:SetFrameStrata("LOW")
 	frame:EnableMouse(true) -- les clics ne traversent pas le panneau
 	-- Fond gere ici (et non par le theme) pour pouvoir le teinter en combat.
-	drawer.bg = T:CreateBackground(frame, nil, T.colors.bg[4])
+	drawer.bg = T:CreateSurface(frame, T.colors.bg[4])
 	drawer.border = T:CreateBorder(frame)
 	drawer.accent = T:CreateAccentLine(frame, "TOP", 2)
 	PaintBackground(drawer)
@@ -1263,11 +1414,12 @@ local function BuildRight()
 	menu:SetAllPoints()
 	T:CreateBackground(menu)
 	T:CreateBorder(menu)
-	local letter = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	letter:SetPoint("CENTER")
-	T:StyleFont(letter, 12, "OUTLINE")
-	letter:SetText("T")
-	letter:SetTextColor(unpack(T.colors.accent))
+	-- "T" de l'icone Tharok UI, a la couleur d'accent.
+	local glyph = menu:CreateTexture(nil, "OVERLAY")
+	glyph:SetTexture(T.media.glyph)
+	glyph:SetPoint("CENTER")
+	glyph:SetSize(STRIP_MIN - 2, STRIP_MIN - 2)
+	glyph:SetVertexColor(unpack(T.colors.accent))
 	local highlight = menu:CreateTexture(nil, "HIGHLIGHT")
 	highlight:SetAllPoints()
 	highlight:SetColorTexture(unpack(T.colors.highlight))
@@ -1354,33 +1506,6 @@ local function AdoptAll()
 			return
 		end
 		Adopt(bar, PlaceBar)
-		-- DIAGNOSTIC TEMPORAIRE : qui change l'echelle ou la taille de la
-		-- barre 1 (ou de ses boutons) en dehors du tiroir ? Affiche l'origine
-		-- de l'appel dans le chat, une fois par type d'appel.
-		if name == "MainActionBar" then
-			local reported = {}
-			local function Report(what, target)
-				return function(self, ...)
-					if placing then
-						return
-					end
-					local stack = debugstack(3, 4, 0) or "?"
-					local key = what .. stack
-					if reported[key] then
-						return
-					end
-					reported[key] = true
-					T:Print("|cffff8000[diag barre 1]|r", what, target, InCombatLockdown() and "(combat)" or "", ...)
-					print(stack)
-				end
-			end
-			hooksecurefunc(bar, "SetScale", Report("SetScale", "barre"))
-			hooksecurefunc(bar, "SetParent", Report("SetParent", "barre"))
-			for i, button in ipairs(bar.actionButtons or {}) do
-				hooksecurefunc(button, "SetScale", Report("SetScale", "bouton " .. i))
-				hooksecurefunc(button, "SetSize", Report("SetSize", "bouton " .. i))
-			end
-		end
 		-- Une barre qui apparait ou disparait change la hauteur du tiroir.
 		bar:HookScript("OnShow", QueueLayout)
 		bar:HookScript("OnHide", QueueLayout)
@@ -1456,6 +1581,31 @@ local function AdoptAll()
 		end
 		AdoptRow(BagsBar, nil, zones.bagBar, "RIGHT", false, BAG_BUTTONS)
 
+		-- Taille de la carte ou position du bandeau changees (mode Edition) :
+		-- on remesure et on refait la mise en page.
+		local remeasureQueued = false
+		local function Remeasure()
+			if remeasureQueued then
+				return
+			end
+			remeasureQueued = true
+			C_Timer.After(0, function()
+				T:AfterCombat(function()
+					remeasureQueued = false
+					pcall(MeasureMap)
+					QueueLayout()
+				end)
+			end)
+		end
+		if Minimap then
+			Minimap:HookScript("OnSizeChanged", Remeasure)
+		end
+		for _, method in ipairs({ "SetHeaderUnderneath", "UpdateHeaderPosition" }) do
+			if MinimapCluster and MinimapCluster[method] then
+				hooksecurefunc(MinimapCluster, method, Remeasure)
+			end
+		end
+
 		Adopt(MinimapCluster, function(frame)
 			-- La carte prend la largeur du contenu ; son cadre Blizzard, plus
 			-- large qu'elle, deborde a gauche de facon invisible.
@@ -1480,6 +1630,13 @@ local function AdoptAll()
 					T.SafeCall(PlaceBags)
 				end)
 			end
+		end
+
+		-- Ancien conteneur du menu systeme et des sacs, vide une fois ceux-ci
+		-- ranges : il reste en bas a droite, par-dessus la minimap, et
+		-- intercepterait la souris.
+		if MicroButtonAndBagsBar then
+			pcall(MicroButtonAndBagsBar.EnableMouse, MicroButtonAndBagsBar, false)
 		end
 
 		-- Barres d'experience et de reputation du jeu : remplacees par les
@@ -1610,6 +1767,33 @@ local function Setup()
 
 	T:Every(1.5, Enforce)
 
+	-- Discretion : au repos (hors combat, sans cible, souris ailleurs, rien
+	-- au curseur), les barres du tiroir du bas s'estompent ; elles reviennent
+	-- en douceur des qu'il se passe quelque chose.
+	local barsIdle
+	T:Every(0.15, function()
+		local bottom = drawers.bottom
+		if not bottom then
+			return
+		end
+		local idleAlpha = Module.db.idleBars or 1
+		local idle = idleAlpha < 1
+			and not inCombat
+			and not UnitExists("target")
+			and not GetCursorInfo()
+			and not bottom.frame:IsMouseOver()
+		if idle == barsIdle then
+			return
+		end
+		barsIdle = idle
+		for _, name in ipairs(BOTTOM_BARS) do
+			local holder = holders[_G[name] or false]
+			if holder then
+				T:FadeTo(holder, idle and idleAlpha or 1, idle and 0.6 or 0.15)
+			end
+		end
+	end)
+
 	T:On("DISPLAY_SIZE_CHANGED", QueueLayout)
 	T:On("UI_SCALE_CHANGED", QueueLayout)
 
@@ -1622,9 +1806,10 @@ local function Setup()
 			if state then
 				drawer.progress = drawer.target
 			end
-			PaintBackground(drawer)
 			Place(drawer)
 		end
+		AnimateCombat(state and 1 or 0)
+		UpdateBreath()
 	end
 	T:On("PLAYER_REGEN_DISABLED", function()
 		SetCombat(true)
@@ -1632,6 +1817,24 @@ local function Setup()
 	T:On("PLAYER_REGEN_ENABLED", function()
 		SetCombat(false)
 	end)
+	-- Mana faible : le liseré glisse du rouge au violet et respire.
+	-- (T:On passe le nom de l'evenement en premier argument.)
+	local function CheckMana(_, unit)
+		if unit and unit ~= "player" then
+			return
+		end
+		local low = IsLowMana()
+		if low ~= lowMana then
+			lowMana = low
+			AnimateMana(low and 1 or 0)
+			UpdateBreath()
+		end
+	end
+	T:On("UNIT_POWER_UPDATE", CheckMana)
+	T:On("UNIT_MAXPOWER", CheckMana)
+	T:On("UNIT_DISPLAYPOWER", CheckMana)
+	T:On("PLAYER_ENTERING_WORLD", CheckMana)
+	CheckMana()
 	-- Changement de theme : on repeint le fond avec la nouvelle couleur.
 	hooksecurefunc(T, "RefreshTheme", function()
 		for _, drawer in pairs(drawers) do
@@ -1716,6 +1919,16 @@ Module.options = {
 	{ type = "header", label = "Apparence" },
 	LiveRange("alpha", "Opacité par défaut", 20, 100, 5, 100),
 	LiveRange("combatAlpha", "Opacité en combat", 20, 100, 5, 100),
+	LiveRange("idleBars", "Barres 1 à 4 au repos (100 = toujours pleines)", 20, 100, 5, 100),
+	{
+		type = "range",
+		key = "lowMana",
+		label = "Mana faible : liseré violet en combat sous (0 = jamais)",
+		min = 0,
+		max = 60,
+		step = 5,
+		suffix = "%",
+	},
 	LiveRange("barScale", "Échelle des barres 1 à 4 (tiroir du bas)", 50, 100, 5, 100, true),
 }
 

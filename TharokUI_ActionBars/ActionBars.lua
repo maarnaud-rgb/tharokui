@@ -76,6 +76,107 @@ local function RestyleButton(button)
 	end
 end
 
+-------------------------------------------------------------------------------
+-- Retour visuel : appui et fin de recharge
+-------------------------------------------------------------------------------
+
+-- Animations jouees par le moteur du jeu (AnimationGroup) : rien n'est
+-- protege, elles fonctionnent en combat. Tout est cree au skin, hors combat.
+
+-- Eclat additif sur l'icone, qui s'eteint en `duration` secondes.
+local function CreateGlow(button, icon, color, peak, duration)
+	local glow = button:CreateTexture(nil, "OVERLAY", nil, 6)
+	glow:SetAllPoints(icon)
+	glow:SetColorTexture(color[1], color[2], color[3], 1)
+	glow:SetBlendMode("ADD")
+	glow:SetAlpha(0)
+	local group = glow:CreateAnimationGroup()
+	local fade = group:CreateAnimation("Alpha")
+	fade:SetFromAlpha(peak)
+	fade:SetToAlpha(0)
+	fade:SetDuration(duration)
+	fade:SetSmoothing("OUT")
+	return group
+end
+
+-- Icone qui se comprime puis revient (appui), ou gonfle puis revient (sort
+-- de nouveau disponible).
+local function CreateBounce(icon, scale, inTime, outTime)
+	local group = icon:CreateAnimationGroup()
+	local first = group:CreateAnimation("Scale")
+	first:SetScaleFrom(1, 1)
+	first:SetScaleTo(scale, scale)
+	first:SetDuration(inTime)
+	first:SetOrder(1)
+	first:SetSmoothing("OUT")
+	local second = group:CreateAnimation("Scale")
+	second:SetScaleFrom(scale, scale)
+	second:SetScaleTo(1, 1)
+	second:SetDuration(outTime)
+	second:SetOrder(2)
+	second:SetSmoothing("IN_OUT")
+	return group
+end
+
+local feedback = {} -- bouton -> { press, pressGlow, ready, readyGlow, duration }
+
+local function PlayPress(button)
+	local fx = feedback[button]
+	if not fx or not T.MotionOn() then
+		return
+	end
+	fx.press:Stop()
+	fx.press:Play()
+	fx.pressGlow:Stop()
+	fx.pressGlow:Play()
+end
+
+local function SetupFeedback(button, icon)
+	if feedback[button] or not icon.CreateAnimationGroup then
+		return
+	end
+	local r, g, b = unpack(T.colors.accent)
+	local fx = {
+		press = CreateBounce(icon, 0.9, 0.05, 0.14),
+		pressGlow = CreateGlow(button, icon, { 1, 1, 1 }, 0.22, 0.25),
+		ready = CreateBounce(icon, 1.08, 0.1, 0.2),
+		readyGlow = CreateGlow(button, icon, { r, g, b }, 0.55, 0.6),
+		duration = 0,
+	}
+	feedback[button] = fx
+
+	-- Touche du clavier : Blizzard passe le bouton a l'etat "enfonce".
+	hooksecurefunc(button, "SetButtonState", function(self, state)
+		if state == "PUSHED" then
+			PlayPress(self)
+		end
+	end)
+	-- Clic souris.
+	button:HookScript("OnMouseDown", PlayPress)
+
+	-- Fin d'une vraie recharge (pas le temps de recharge global) : le sort
+	-- est de nouveau disponible, l'icone le signale une fois.
+	local cooldown = button.cooldown
+	if cooldown then
+		hooksecurefunc(cooldown, "SetCooldown", function(_, _, duration)
+			if T.IsSecret(duration) or type(duration) ~= "number" then
+				fx.duration = 0
+			else
+				fx.duration = duration
+			end
+		end)
+		cooldown:HookScript("OnCooldownDone", function()
+			if fx.duration > 2 and T.MotionOn() then
+				fx.ready:Stop()
+				fx.ready:Play()
+				fx.readyGlow:Stop()
+				fx.readyGlow:Play()
+			end
+			fx.duration = 0
+		end)
+	end
+end
+
 local function SkinButton(button)
 	if skinned[button] then
 		return
@@ -128,6 +229,8 @@ local function SkinButton(button)
 			T:Fade(button.Name)
 		end
 	end
+
+	SetupFeedback(button, icon)
 
 	RestyleButton(button)
 	if button.UpdateButtonArt then

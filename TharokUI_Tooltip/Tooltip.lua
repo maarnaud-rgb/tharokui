@@ -41,7 +41,7 @@ local function SkinTooltip(tooltip, _, embedded)
 	skinned[tooltip] = true
 
 	-- Opacite propre : une infobulle doit rester lisible sur n'importe quel fond.
-	T:CreateBackground(tooltip, nil, 0.94)
+	T:CreateSurface(tooltip, 0.94, true)
 	T:CreateBorder(tooltip, tooltip, 1, 1)
 	T:CreateAccentLine(tooltip, "TOP", 2)
 end
@@ -59,6 +59,13 @@ function Module:OnEnable()
 	-- changement de style.
 	if SharedTooltip_SetBackdropStyle then
 		hooksecurefunc("SharedTooltip_SetBackdropStyle", SkinTooltip)
+	end
+
+	-- Apparition en fondu tres court : l'infobulle ne surgit plus d'un coup.
+	if GameTooltip and not (GameTooltip.IsForbidden and GameTooltip:IsForbidden()) then
+		GameTooltip:HookScript("OnShow", function(tooltip)
+			T:FadeIn(tooltip, 0.12)
+		end)
 	end
 
 	if self.db.flatHealthBar and GameTooltipStatusBar then

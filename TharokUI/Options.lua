@@ -410,6 +410,29 @@ local function GeneralEntries()
 				theme.font = value
 			end,
 		},
+		{
+			-- Pas de "live" : les textures sont posees a la creation des
+			-- panneaux, il faut recharger.
+			type = "toggle",
+			label = "Matière des panneaux (grain, reflet, ombre)",
+			get = function()
+				return theme.texture
+			end,
+			set = function(value)
+				theme.texture = value
+			end,
+		},
+		{
+			type = "toggle",
+			label = "Animations (fondus, retour au clic, jauges)",
+			live = true,
+			get = function()
+				return theme.motion
+			end,
+			set = function(value)
+				theme.motion = value
+			end,
+		},
 
 		{ type = "header", label = "Mise à l'échelle" },
 		{
@@ -572,7 +595,7 @@ local function BuildWindow()
 	window:Hide()
 	tinsert(UISpecialFrames, "TharokUIOptions") -- se ferme avec Echap
 
-	T:CreateBackground(window, nil, 0.95)
+	T:CreateSurface(window, 0.95)
 	T:CreateBorder(window)
 	T:CreateAccentLine(window, "TOP", 2)
 
@@ -644,11 +667,13 @@ function T:ToggleOptions()
 	if not window then
 		BuildWindow()
 		window:Show()
+		T:FadeIn(window, 0.18)
 		return
 	end
 	window:SetShown(not window:IsShown())
 	if window:IsShown() then
 		RefreshPage()
+		T:FadeIn(window, 0.18)
 	end
 end
 
@@ -709,17 +734,17 @@ local function BuildMinimapButton()
 	button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	button:RegisterForDrag("LeftButton")
 
-	-- Anneau a la couleur d'accent, disque sombre, lettre "T".
+	-- Anneau a la couleur d'accent, disque sombre, "T" de l'icone Tharok UI.
 	local ring = Disc(button, 0, "BACKGROUND")
 	ring:SetColorTexture(Accent())
 	local fill = Disc(button, 2, "ARTWORK")
 	fill:SetColorTexture(0.06, 0.06, 0.07, 1)
 
-	local letter = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	T:StyleFont(letter, 13, "OUTLINE")
-	letter:SetPoint("CENTER", 0, 0)
-	letter:SetText("T")
-	letter:SetTextColor(Accent())
+	local glyph = button:CreateTexture(nil, "OVERLAY")
+	glyph:SetTexture(T.media.glyph)
+	glyph:SetPoint("TOPLEFT", 3, -3)
+	glyph:SetPoint("BOTTOMRIGHT", -3, 3)
+	glyph:SetVertexColor(Accent())
 
 	button:SetScript("OnClick", function()
 		T:ToggleOptions()

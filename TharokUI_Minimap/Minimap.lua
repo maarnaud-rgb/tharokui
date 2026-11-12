@@ -28,10 +28,10 @@ local function SkinHeader()
 	-- Blizzard reapplique l'atlas a chaque changement d'etat, mais ne touche
 	-- pas a l'alpha de cette texture.
 	T:Fade(button.StateTexture)
-	T:CreateBackground(button)
+	T:CreateSurface(button, nil, true)
 	T:CreateBorder(button, button, 1, 1)
 	T:CreateAccentLine(button, "BOTTOM", 2)
-	T:StyleFont(MinimapZoneText, 12, "OUTLINE")
+	T:SoftFont(MinimapZoneText, T.fontSizes.normal, false) -- couleur : celle du type de zone
 end
 
 Module.options = {
@@ -73,5 +73,13 @@ function Module:OnEnable()
 
 	if self.db.flatHeader then
 		SkinHeader()
+	end
+
+	-- Coordonnees du joueur sous la carte : discretes (elles grossissent
+	-- avec la carte quand le tiroir l'agrandit).
+	local container = MinimapCluster.MinimapContainer
+	local coords = container and container.PlayerCoords
+	if coords and coords.CoordText then
+		T:SoftFont(coords.CoordText, T.fontSizes.small - 1, "textDim")
 	end
 end

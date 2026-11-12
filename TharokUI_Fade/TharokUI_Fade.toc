@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI - Transparence
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Opacite au repos et au survol, reglable par zone de l interface.
 ## Version: 0.1.0
 ## Dependencies: TharokUI

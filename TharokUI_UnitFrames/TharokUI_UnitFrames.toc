@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI - Cadres d'unite
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Cadres joueur, cible et focalisation a plat, sans decor.
 ## Version: 0.1.0
 ## Dependencies: TharokUI

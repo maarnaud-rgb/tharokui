@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: |cff4fc3f7Tharok|r UI
+## IconTexture: Interface\AddOns\TharokUI\Media\icon
 ## Notes: Socle de Tharok UI : theme, outils de skin et gestion des modules.
 ## Version: 0.1.0
 ## SavedVariables: TharokUIDB
