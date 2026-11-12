@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: |cff4fc3f7Tharok|r UI - Tiroir
+## Notes: Mode tiroir : deux panneaux coulissants (droite et bas) qui rangent quetes, sacs, minimap, menus et barres d action.
+## Version: 0.1.0
+## Dependencies: TharokUI
+
+Drawer.lua

@@ -84,6 +84,12 @@ function T:ClassColor(classFile)
 	end
 end
 
+-- Transparence : un seul reglage prime par element. Un module qui prend la
+-- main sur l'opacite d'une frame (le tiroir, pour ce qu'il contient) l'inscrit
+-- ici ; le module Transparence ne touche alors plus a cette frame. Apres une
+-- modification, appeler T.RefreshFade() s'il existe.
+T.alphaOwned = {}
+
 -- Appelle fn() toutes les `interval` secondes. Le minuteur vit sur `owner`
 -- (il ne tourne alors que quand cette frame est affichee) ou, a defaut, sur
 -- une frame a part toujours active. Renvoie la frame qui le porte.

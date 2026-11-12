@@ -64,7 +64,10 @@ local function Rebuild()
 		local inert = settings.idle >= 1 and settings.hover >= 1
 		for _, name in ipairs(ZONES[zone]) do
 			local frame = _G[name]
-			if frame and (not inert or current[frame]) then
+			if frame and T.alphaOwned[frame] then
+				-- Opacite geree par un autre module (tiroir) : on lache prise.
+				current[frame] = nil
+			elseif frame and (not inert or current[frame]) then
 				active[#active + 1] = { frame = frame, settings = settings }
 			end
 		end
@@ -237,6 +240,7 @@ function Module:OnEnable()
 		Step(elapsed)
 	end)
 	Rebuild()
+	T.RefreshFade = Rebuild
 	-- Certaines frames Blizzard n'existent qu'une fois le monde charge.
 	T:On("PLAYER_ENTERING_WORLD", Rebuild)
 end
