@@ -123,6 +123,86 @@ local function ThemeCommand(args)
 	ShowTheme()
 end
 
+-------------------------------------------------------------------------------
+-- /tharok taint
+-------------------------------------------------------------------------------
+-- Diagnostic : cherche ce qu'un addon a contamine sur les boutons d'action
+-- (champs ecrits par du code non securise). Le rapport est aussi garde dans
+-- les reglages sauvegardes (taintReport) pour etre relu apres /reload.
+
+local function TaintCommand()
+	if not issecurevariable then
+		T:Print("diagnostic indisponible dans ce client.")
+		return
+	end
+	local counts, order = {}, {}
+	local function Note(where, key, addon)
+		local label = format("%s.%s <- %s", where, tostring(key), tostring(addon))
+		if not counts[label] then
+			counts[label] = 0
+			order[#order + 1] = label
+		end
+		counts[label] = counts[label] + 1
+	end
+	local function Scan(object, where)
+		if type(object) ~= "table" then
+			return
+		end
+		for key in pairs(object) do
+			local ok, secure, addon = pcall(issecurevariable, object, key)
+			if ok and not secure then
+				Note(where, type(key) == "table" and "[cadre]" or key, addon)
+			end
+		end
+	end
+
+	for _, name in ipairs({
+		"ActionButton_UpdateCooldown", "ActionButton_ApplyCooldown", "CooldownFrame_Set",
+		"ActionBarActionEventsFrame", "ActionBarButtonEventsFrame", "ActionBarActionButtonMixin",
+		"ActionBarButtonEventsFrameMixin", "ActionBarActionEventsFrameMixin",
+	}) do
+		local secure, addon = issecurevariable(name)
+		if not secure then
+			Note("_G", name, addon)
+		end
+		local object = _G[name]
+		if type(object) == "table" then
+			Scan(object, name)
+			for key, value in pairs(object) do
+				if type(value) == "table" and type(key) == "string" and not value.GetObjectType then
+					Scan(value, name .. "." .. key)
+				end
+			end
+		end
+	end
+
+	for _, barName in ipairs({
+		"MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarLeft", "MultiBarRight",
+		"MultiBar5", "MultiBar6", "MultiBar7", "StanceBar", "PetActionBar",
+	}) do
+		local bar = _G[barName]
+		if bar then
+			Scan(bar, "barre")
+			for _, button in pairs(bar.actionButtons or {}) do
+				Scan(button, "bouton")
+				Scan(button.cooldown, "bouton.cooldown")
+				Scan(button.chargeCooldown, "bouton.chargeCooldown")
+			end
+		end
+	end
+
+	local report = {}
+	for _, label in ipairs(order) do
+		report[#report + 1] = format("%s (x%d)", label, counts[label])
+	end
+	T.db.taintReport = report
+	T.db.taintTrace = nil -- ancienne trace de diagnostic
+	T:Print("diagnostic :", #report, "champ(s) contamine(s). Tape /reload pour l'enregistrer.")
+	for i = 1, math.min(#report, 25) do
+		print("  " .. report[i])
+	end
+end
+
 SLASH_THAROKUI1 = "/tharok"
 SLASH_THAROKUI2 = "/tk"
 
@@ -145,6 +225,11 @@ SlashCmdList.THAROKUI = function(message)
 
 	if strlower(args[1]) == "theme" then
 		ThemeCommand(args)
+		return
+	end
+
+	if first == "taint" then
+		TaintCommand()
 		return
 	end
 

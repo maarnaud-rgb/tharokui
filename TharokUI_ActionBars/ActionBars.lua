@@ -118,7 +118,7 @@ local function CreateBounce(icon, scale, inTime, outTime)
 	return group
 end
 
-local feedback = {} -- bouton -> { press, pressGlow, ready, readyGlow, duration }
+local feedback = {} -- bouton -> { press, pressGlow, ready, readyGlow, shownAt }
 
 local function PlayPress(button)
 	local fx = feedback[button]
@@ -141,7 +141,6 @@ local function SetupFeedback(button, icon)
 		pressGlow = CreateGlow(button, icon, { 1, 1, 1 }, 0.22, 0.25),
 		ready = CreateBounce(icon, 1.08, 0.1, 0.2),
 		readyGlow = CreateGlow(button, icon, { r, g, b }, 0.55, 0.6),
-		duration = 0,
 	}
 	feedback[button] = fx
 
@@ -158,21 +157,22 @@ local function SetupFeedback(button, icon)
 	-- est de nouveau disponible, l'icone le signale une fois.
 	local cooldown = button.cooldown
 	if cooldown then
-		hooksecurefunc(cooldown, "SetCooldown", function(_, _, duration)
-			if T.IsSecret(duration) or type(duration) ~= "number" then
-				fx.duration = 0
-			else
-				fx.duration = duration
-			end
+		-- Surtout pas de hook sur SetCooldown : en combat Blizzard lui passe
+		-- des valeurs secretes, que le jeu refuse des qu'un addon s'est
+		-- greffe sur la methode. On mesure donc nous-memes combien de temps
+		-- le balayage est reste affiche.
+		cooldown:HookScript("OnShow", function()
+			fx.shownAt = GetTime()
 		end)
 		cooldown:HookScript("OnCooldownDone", function()
-			if fx.duration > 2 and T.MotionOn() then
+			local lasted = fx.shownAt and (GetTime() - fx.shownAt) or 0
+			fx.shownAt = nil
+			if lasted > 2 and T.MotionOn() then
 				fx.ready:Stop()
 				fx.ready:Play()
 				fx.readyGlow:Stop()
 				fx.readyGlow:Play()
 			end
-			fx.duration = 0
 		end)
 	end
 end

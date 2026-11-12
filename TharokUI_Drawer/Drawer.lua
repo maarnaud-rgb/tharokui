@@ -347,6 +347,53 @@ for _, list in ipairs({ BOTTOM_BARS, RIGHT_BARS }) do
 	end
 end
 
+-- Une disposition du mode Edition qui ancre un element a l'un de nos cadres
+-- contamine cet element a chaque chargement : pour retrouver le cadre par son
+-- nom, le code de Blizzard lit une variable creee par un addon, et tout ce
+-- qu'il regle ensuite sur la barre (rangees, orientation...) est marque comme
+-- venant de nous. En instance, le jeu refuse alors d'afficher les recharges
+-- des boutons d'action ("Secret values are only allowed during untainted
+-- execution"). On reecrit donc ces ancres vers UIParent dans les dispositions
+-- enregistrees : la position reelle est de toute facon imposee par le tiroir.
+local function CleanLayouts()
+	if not C_EditMode or not C_EditMode.GetLayouts or not C_EditMode.SaveLayouts then
+		return
+	end
+	if InCombatLockdown() then
+		T:AfterCombat(CleanLayouts)
+		return
+	end
+	local info = C_EditMode.GetLayouts()
+	if type(info) ~= "table" or type(info.layouts) ~= "table" then
+		return
+	end
+	local fixed = 0
+	for _, layout in ipairs(info.layouts) do
+		if type(layout.systems) == "table" then
+			for _, system in ipairs(layout.systems) do
+				for _, key in ipairs({ "anchorInfo", "anchorInfo2" }) do
+					local anchor = system[key]
+					if
+						type(anchor) == "table"
+						and type(anchor.relativeTo) == "string"
+						and strfind(anchor.relativeTo, "^TharokUI")
+					then
+						anchor.relativeTo = "UIParent"
+						fixed = fixed + 1
+					end
+				end
+			end
+		end
+	end
+	if fixed > 0 then
+		C_EditMode.SaveLayouts(info)
+		T:Print("tiroir : disposition du mode Edition corrigee (" .. fixed .. " ancre(s)). Tape /reload pour finir.")
+	end
+end
+
+T:On("PLAYER_ENTERING_WORLD", CleanLayouts)
+T:On("EDIT_MODE_LAYOUTS_UPDATED", T:Debounce(CleanLayouts, 0.5))
+
 -- Apres chaque placement, on retient ou se trouve l'element (et, pour une
 -- barre ou une rangee, ses boutons). Un controle periodique compare : si le
 -- jeu ou un autre addon l'a deplace sans passer par SetPoint, on le replace.
