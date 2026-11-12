@@ -189,8 +189,15 @@ end
 local breather = CreateFrame("Frame")
 breather:Hide()
 local breathTime = 0
+local breathPending = 0
 breather:SetScript("OnUpdate", function(_, elapsed)
 	breathTime = breathTime + elapsed
+	-- 30 images par seconde suffisent a une respiration lente.
+	breathPending = breathPending + elapsed
+	if breathPending < 1 / 30 then
+		return
+	end
+	breathPending = 0
 	pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(breathTime * math.pi * 2 / 1.6))
 	PaintAll()
 end)
@@ -1830,9 +1837,9 @@ local function Setup()
 			UpdateBreath()
 		end
 	end
-	T:On("UNIT_POWER_UPDATE", CheckMana)
-	T:On("UNIT_MAXPOWER", CheckMana)
-	T:On("UNIT_DISPLAYPOWER", CheckMana)
+	T:OnUnit("UNIT_POWER_UPDATE", CheckMana, "player")
+	T:OnUnit("UNIT_MAXPOWER", CheckMana, "player")
+	T:OnUnit("UNIT_DISPLAYPOWER", CheckMana, "player")
 	T:On("PLAYER_ENTERING_WORLD", CheckMana)
 	CheckMana()
 	-- Changement de theme : on repeint le fond avec la nouvelle couleur.

@@ -311,13 +311,14 @@ function Module:OnEnable()
 			showGrid = false
 			UpdateAllEmpty()
 		end)
+		-- Au chargement, ACTIONBAR_SLOT_CHANGED arrive une fois par emplacement :
+		-- une seule mise a jour par rafale, apres celle de Blizzard.
+		local queueEmpty = T:Debounce(UpdateAllEmpty, 0)
 		for _, event in ipairs({
 			"PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
 			"UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM",
 		}) do
-			T:On(event, function()
-				C_Timer.After(0, UpdateAllEmpty) -- apres la mise a jour Blizzard
-			end)
+			T:On(event, queueEmpty)
 		end
 		UpdateAllEmpty()
 	end

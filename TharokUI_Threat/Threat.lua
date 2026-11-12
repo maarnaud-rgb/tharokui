@@ -129,23 +129,14 @@ function Module:OnEnable()
 	-- Les evenements de menace arrivent avec des jetons varies (joueur,
 	-- membre du groupe, cible de la cible...) : on rafraichit donc toutes les
 	-- barres de nom affichees, au plus une fois tous les dixiemes de seconde.
-	local refreshQueued = false
-
 	local function RefreshAll()
-		refreshQueued = false
 		for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
 			local unitFrame = plate.UnitFrame
 			UpdateUnit(plate.namePlateUnitToken or (unitFrame and unitFrame.unit))
 		end
 	end
 
-	local function QueueRefresh()
-		if refreshQueued then
-			return
-		end
-		refreshQueued = true
-		C_Timer.After(0.1, RefreshAll)
-	end
+	local QueueRefresh = T:Debounce(RefreshAll, 0.1)
 
 	T:On("UNIT_THREAT_LIST_UPDATE", QueueRefresh)
 	T:On("UNIT_THREAT_SITUATION_UPDATE", QueueRefresh)

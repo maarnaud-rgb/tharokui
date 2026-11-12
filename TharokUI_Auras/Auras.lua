@@ -67,7 +67,7 @@ end
 -- quel sans obtenir un grand rectangle vide.
 
 local PADDING = 4
-local UPDATE_INTERVAL = 0.2
+local FALLBACK_INTERVAL = 1 -- filet de securite (deplacement en mode Edition...)
 
 local IsSecret = T.IsSecret
 
@@ -142,16 +142,29 @@ local function CreateBox(source, r, g, b)
 	boxes[#boxes + 1] = box
 end
 
--- Le suivi tourne sur une seule frame toujours visible, a faible cadence.
+local function UpdateBoxes()
+	for i = 1, #boxes do
+		pcall(UpdateBox, boxes[i])
+	end
+end
+
+-- Mise a jour quand les auras changent (mise en page Blizzard, auras du
+-- joueur), une fois par rafale ; plus un passage lent pour le reste.
+local QueueBoxes = T:Debounce(UpdateBoxes, 0)
+
 local function StartBoxDriver()
 	if #boxes == 0 then
 		return
 	end
-	T:Every(UPDATE_INTERVAL, function()
-		for i = 1, #boxes do
-			pcall(UpdateBox, boxes[i])
+	for i = 1, #boxes do
+		local container = boxes[i].source.AuraContainer
+		if container and container.UpdateGridLayout then
+			hooksecurefunc(container, "UpdateGridLayout", QueueBoxes)
 		end
-	end)
+	end
+	T:OnUnit("UNIT_AURA", QueueBoxes, "player")
+	T:Every(FALLBACK_INTERVAL, UpdateBoxes)
+	QueueBoxes()
 end
 
 Module.options = {

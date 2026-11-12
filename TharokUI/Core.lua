@@ -105,21 +105,57 @@ end
 -- modification, appeler T.RefreshFade() s'il existe.
 T.alphaOwned = {}
 
--- Appelle fn() toutes les `interval` secondes. Le minuteur vit sur `owner`
--- (il ne tourne alors que quand cette frame est affichee) ou, a defaut, sur
--- une frame a part toujours active. Renvoie la frame qui le porte.
-function T:Every(interval, fn, owner)
-	local driver = owner or CreateFrame("Frame")
-	local elapsed = 0
-	driver:SetScript("OnUpdate", function(_, delta)
-		elapsed = elapsed + delta
-		if elapsed < interval then
+-- Minuteurs : une seule frame fait tourner tous les minuteurs du socle et
+-- des modules (une frame OnUpdate par minuteur coute plus cher).
+local timers = {}
+local timerFrame = CreateFrame("Frame")
+timerFrame:Hide()
+timerFrame:SetScript("OnUpdate", function(self, delta)
+	for i = #timers, 1, -1 do
+		local timer = timers[i]
+		if timer.cancelled then
+			table.remove(timers, i)
+		else
+			timer.elapsed = timer.elapsed + delta
+			if timer.elapsed >= timer.interval then
+				timer.elapsed = 0
+				T.SafeCall(timer.fn)
+			end
+		end
+	end
+	if #timers == 0 then
+		self:Hide()
+	end
+end)
+
+-- Appelle fn() toutes les `interval` secondes. Renvoie un objet dont
+-- :Cancel() arrete le minuteur.
+function T:Every(interval, fn)
+	local timer = { interval = interval, fn = fn, elapsed = 0 }
+	function timer:Cancel()
+		self.cancelled = true
+	end
+	timers[#timers + 1] = timer
+	timerFrame:Show()
+	return timer
+end
+
+-- Renvoie une fonction qui, appelee plusieurs fois de suite, n'execute fn()
+-- qu'une fois, `delay` secondes apres le premier appel (0 = image suivante).
+-- Pour absorber les rafales d'evenements.
+function T:Debounce(fn, delay)
+	local queued = false
+	local function Run()
+		queued = false
+		T.SafeCall(fn)
+	end
+	return function()
+		if queued then
 			return
 		end
-		elapsed = 0
-		fn()
-	end)
-	return driver
+		queued = true
+		C_Timer.After(delay or 0, Run)
+	end
 end
 
 -------------------------------------------------------------------------------
@@ -155,6 +191,27 @@ function T:On(event, fn)
 	list[#list + 1] = fn
 end
 
+-- Evenement d'unite filtre par le jeu lui-meme : fn(event, unit, ...) n'est
+-- appele que pour les unites donnees. Bien moins couteux que T:On pour les
+-- evenements frequents (UNIT_POWER_UPDATE arrive pour chaque unite
+-- visible, barres de nom comprises).
+function T:OnUnit(event, fn, ...)
+	local frame = CreateFrame("Frame")
+	frame:RegisterUnitEvent(event, ...)
+	frame:SetScript("OnEvent", function(_, ...)
+		SafeCall(fn, ...)
+	end)
+	return frame
+end
+
+-- Etat de combat partage : mis a jour avant les gestionnaires des modules
+-- (ceux-ci s'inscrivent apres le socle).
+T.inCombat = false
+
+T:On("PLAYER_REGEN_DISABLED", function()
+	T.inCombat = true
+end)
+
 -- Execute fn tout de suite, ou a la sortie du combat si on est en combat.
 local afterCombat = {}
 
@@ -167,6 +224,7 @@ function T:AfterCombat(fn)
 end
 
 T:On("PLAYER_REGEN_ENABLED", function()
+	T.inCombat = false
 	if #afterCombat == 0 then
 		return
 	end
@@ -267,6 +325,9 @@ T:On("ADDON_LOADED", function(_, loadedName)
 end)
 
 T:On("PLAYER_LOGIN", function()
+	-- /reload en plein combat : l'etat ne vient pas d'un evenement.
+	T.inCombat = InCombatLockdown() and true or false
+
 	-- Avant les modules : leurs tailles au pixel dependent de l'echelle.
 	if T.InitScale then
 		SafeCall(T.InitScale, T)

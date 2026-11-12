@@ -46,7 +46,7 @@ local Module = T:RegisterModule("Fade", {
 
 local FADE_SPEED = 4 -- variation d'opacite par seconde
 local current = {} -- frame -> opacite que nous avons appliquee
-local inCombat = false
+local STEP = 1 / 30 -- cadence du pilote : un fondu n'a pas besoin de chaque image
 
 -- Frames a suivre : celles des zones reglees en dessous de 100 %, plus celles
 -- que nous avons estompees et qui doivent encore revenir a 100 %. Tant que la
@@ -78,7 +78,7 @@ end
 local function Step(elapsed)
 	local delta = FADE_SPEED * elapsed
 	local editing = EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()
-	local forceHover = inCombat and Module.db.combat
+	local forceHover = T.inCombat and Module.db.combat
 	local stale = false
 
 	for i = 1, #active do
@@ -227,17 +227,15 @@ for _, zone in ipairs(ZONE_ORDER) do
 end
 
 function Module:OnEnable()
-	inCombat = InCombatLockdown() and true or false
-	T:On("PLAYER_REGEN_DISABLED", function()
-		inCombat = true
-	end)
-	T:On("PLAYER_REGEN_ENABLED", function()
-		inCombat = false
-	end)
-
 	driver = CreateFrame("Frame")
+	local pending = 0
 	driver:SetScript("OnUpdate", function(_, elapsed)
-		Step(elapsed)
+		pending = pending + elapsed
+		if pending < STEP then
+			return
+		end
+		Step(pending)
+		pending = 0
 	end)
 	Rebuild()
 	T.RefreshFade = Rebuild
